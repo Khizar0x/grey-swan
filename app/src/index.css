@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: Helvetica, Inter, ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: #faf7f2;
+  --color-ink: #262220;
+  --color-gold: #c9a24b;
+
+  /* status badges: positive/complete, pending, attention/dispute */
+  --color-status-positive: #3f7d58;
+  --color-status-positive-bg: #e7f0e9;
+  --color-status-pending: #a9781f;
+  --color-status-pending-bg: #f5ecd9;
+  --color-status-attention: #a8402f;
+  --color-status-attention-bg: #f6e6e2;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}

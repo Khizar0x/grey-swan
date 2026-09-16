@@ -1,0 +1,1101 @@
+{
+  "address": "2YnarssLwdKPi3Br6C6cUcAuKyyoDagXaHZWo3kykcko",
+  "metadata": {
+    "name": "greyswan",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "claim_refund",
+      "discriminator": [
+        15,
+        16,
+        30,
+        161,
+        255,
+        228,
+        97,
+        60
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "confirm_return",
+      "discriminator": [
+        4,
+        2,
+        116,
+        9,
+        172,
+        37,
+        212,
+        19
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "platform_wallet",
+          "writable": true,
+          "address": "32tt6bRdV1bM9D9ZkgfPFz3kt44YgpfJ6yYhfz8kiYbD"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "flag_return_issue",
+      "discriminator": [
+        154,
+        215,
+        254,
+        141,
+        243,
+        134,
+        108,
+        230
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "increment",
+      "discriminator": [
+        11,
+        18,
+        104,
+        9,
+        104,
+        174,
+        59,
+        33
+      ],
+      "accounts": [
+        {
+          "name": "counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_config",
+      "discriminator": [
+        23,
+        235,
+        115,
+        232,
+        168,
+        96,
+        1,
+        231
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "admin",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "list_item",
+      "discriminator": [
+        174,
+        245,
+        22,
+        211,
+        228,
+        103,
+        121,
+        13
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "item_name"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "item_name",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "photos",
+          "type": "string"
+        },
+        {
+          "name": "rental_price",
+          "type": "u64"
+        },
+        {
+          "name": "deposit_amount",
+          "type": "u64"
+        },
+        {
+          "name": "estimated_value",
+          "type": "u64"
+        },
+        {
+          "name": "category",
+          "type": {
+            "defined": {
+              "name": "Category"
+            }
+          }
+        },
+        {
+          "name": "rarity_tier",
+          "type": {
+            "defined": {
+              "name": "RarityTier"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "reject_on_arrival",
+      "discriminator": [
+        220,
+        140,
+        150,
+        16,
+        102,
+        70,
+        23,
+        229
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "photos",
+          "type": "string"
+        },
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "rent_item",
+      "discriminator": [
+        182,
+        143,
+        120,
+        184,
+        147,
+        89,
+        164,
+        37
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "renter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "weeks",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "resolve_dispute",
+      "discriminator": [
+        231,
+        6,
+        202,
+        6,
+        96,
+        103,
+        12,
+        230
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "owner_amount",
+          "type": "u64"
+        },
+        {
+          "name": "renter_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "submit_phase1",
+      "discriminator": [
+        35,
+        119,
+        221,
+        107,
+        182,
+        179,
+        68,
+        91
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "photos",
+          "type": "string"
+        },
+        {
+          "name": "tracking_number",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "submit_phase2",
+      "discriminator": [
+        153,
+        165,
+        17,
+        158,
+        90,
+        98,
+        32,
+        54
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "photos",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "submit_phase3",
+      "discriminator": [
+        225,
+        110,
+        7,
+        54,
+        30,
+        152,
+        133,
+        249
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "photos",
+          "type": "string"
+        },
+        {
+          "name": "tracking_number",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "submit_phase4",
+      "discriminator": [
+        221,
+        150,
+        197,
+        47,
+        185,
+        203,
+        204,
+        139
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "photos",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Counter",
+      "discriminator": [
+        255,
+        176,
+        4,
+        245,
+        188,
+        253,
+        124,
+        25
+      ]
+    },
+    {
+      "name": "Listing",
+      "discriminator": [
+        218,
+        32,
+        50,
+        73,
+        43,
+        134,
+        26,
+        58
+      ]
+    },
+    {
+      "name": "Rental",
+      "discriminator": [
+        121,
+        83,
+        229,
+        235,
+        73,
+        50,
+        143,
+        184
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "Only the counter authority can update this counter"
+    },
+    {
+      "code": 6001,
+      "name": "CounterOverflow",
+      "msg": "Counter has reached the maximum value"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidRentalPrice",
+      "msg": "Rental price must be greater than zero"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidDepositAmount",
+      "msg": "Deposit amount must be greater than zero"
+    },
+    {
+      "code": 6004,
+      "name": "ListingNotAvailable",
+      "msg": "This listing is not currently available"
+    },
+    {
+      "code": 6005,
+      "name": "NotListingOwner",
+      "msg": "Only the listing owner can confirm this return"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidRentalStatus",
+      "msg": "This rental is not in a state that can be confirmed"
+    },
+    {
+      "code": 6007,
+      "name": "NotRenter",
+      "msg": "Only the renter can claim this refund"
+    },
+    {
+      "code": 6008,
+      "name": "TimeoutNotElapsed",
+      "msg": "The refund waiting period has not yet elapsed"
+    },
+    {
+      "code": 6009,
+      "name": "ItemNameTooLong",
+      "msg": "Item name must be 50 characters or fewer"
+    },
+    {
+      "code": 6010,
+      "name": "DescriptionTooLong",
+      "msg": "Description must be 500 characters or fewer"
+    },
+    {
+      "code": 6011,
+      "name": "PhotosLinkTooLong",
+      "msg": "Photos link must be 200 characters or fewer"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidEstimatedValue",
+      "msg": "Estimated value must be greater than zero for rare and antique items"
+    },
+    {
+      "code": 6013,
+      "name": "DepositExceedsCap",
+      "msg": "Deposit cannot exceed 45% of the item's estimated value"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidRentalDuration",
+      "msg": "Rentals must be between 1 and 12 weeks"
+    },
+    {
+      "code": 6015,
+      "name": "MathOverflow",
+      "msg": "Amount calculation overflowed"
+    },
+    {
+      "code": 6016,
+      "name": "PhaseOutOfOrder",
+      "msg": "The previous handover step must be completed first"
+    },
+    {
+      "code": 6017,
+      "name": "TrackingNumberTooLong",
+      "msg": "Tracking number must be 40 characters or fewer"
+    },
+    {
+      "code": 6018,
+      "name": "PhotosLinkRequired",
+      "msg": "A photos link is required for this step"
+    },
+    {
+      "code": 6019,
+      "name": "TrackingNumberRequired",
+      "msg": "A tracking number is required for this step"
+    },
+    {
+      "code": 6020,
+      "name": "NotRenterForPhase",
+      "msg": "Only the renter can complete this step"
+    },
+    {
+      "code": 6021,
+      "name": "NotOwnerForPhase",
+      "msg": "Only the owner can complete this step"
+    },
+    {
+      "code": 6022,
+      "name": "HandoverIncomplete",
+      "msg": "All four handover steps must be completed before confirming"
+    },
+    {
+      "code": 6023,
+      "name": "NotAdmin",
+      "msg": "Only the admin wallet can resolve disputes"
+    },
+    {
+      "code": 6024,
+      "name": "NotDisputed",
+      "msg": "This rental is not under dispute"
+    },
+    {
+      "code": 6025,
+      "name": "DisputeReasonRequired",
+      "msg": "A reason is required when raising an issue"
+    },
+    {
+      "code": 6026,
+      "name": "DisputeReasonTooLong",
+      "msg": "Reason must be 300 characters or fewer"
+    },
+    {
+      "code": 6027,
+      "name": "ResolutionAmountMismatch",
+      "msg": "The resolution amounts must equal the total funds held"
+    }
+  ],
+  "types": [
+    {
+      "name": "Category",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "PhotographyVideo"
+          },
+          {
+            "name": "MusicAudio"
+          },
+          {
+            "name": "ToolsEquipment"
+          },
+          {
+            "name": "SportsOutdoor"
+          },
+          {
+            "name": "Other"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Counter",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "count",
+            "type": "u64"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisputeKind",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "None"
+          },
+          {
+            "name": "ReturnIssue"
+          },
+          {
+            "name": "ArrivalIssue"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HandoverPhase",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "None"
+          },
+          {
+            "name": "BeforeSending"
+          },
+          {
+            "name": "OnArrival"
+          },
+          {
+            "name": "BeforeReturning"
+          },
+          {
+            "name": "OnReturn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Listing",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "item_name",
+            "type": "string"
+          },
+          {
+            "name": "description",
+            "type": "string"
+          },
+          {
+            "name": "photos",
+            "type": "string"
+          },
+          {
+            "name": "rental_price",
+            "type": "u64"
+          },
+          {
+            "name": "deposit_amount",
+            "type": "u64"
+          },
+          {
+            "name": "estimated_value",
+            "type": "u64"
+          },
+          {
+            "name": "category",
+            "type": {
+              "defined": {
+                "name": "Category"
+              }
+            }
+          },
+          {
+            "name": "rarity_tier",
+            "type": {
+              "defined": {
+                "name": "RarityTier"
+              }
+            }
+          },
+          {
+            "name": "is_available",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RarityTier",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Common"
+          },
+          {
+            "name": "Rare"
+          },
+          {
+            "name": "Antique"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Rental",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "renter",
+            "type": "pubkey"
+          },
+          {
+            "name": "weekly_price",
+            "type": "u64"
+          },
+          {
+            "name": "weeks",
+            "type": "u16"
+          },
+          {
+            "name": "total_rental_cost",
+            "type": "u64"
+          },
+          {
+            "name": "deposit_amount",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "RentalStatus"
+              }
+            }
+          },
+          {
+            "name": "current_phase",
+            "type": {
+              "defined": {
+                "name": "HandoverPhase"
+              }
+            }
+          },
+          {
+            "name": "phase1_photos",
+            "type": "string"
+          },
+          {
+            "name": "outbound_tracking",
+            "type": "string"
+          },
+          {
+            "name": "phase2_photos",
+            "type": "string"
+          },
+          {
+            "name": "phase3_photos",
+            "type": "string"
+          },
+          {
+            "name": "return_tracking",
+            "type": "string"
+          },
+          {
+            "name": "phase4_photos",
+            "type": "string"
+          },
+          {
+            "name": "dispute_kind",
+            "type": {
+              "defined": {
+                "name": "DisputeKind"
+              }
+            }
+          },
+          {
+            "name": "dispute_reason",
+            "type": "string"
+          },
+          {
+            "name": "disputed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RentalStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Active"
+          },
+          {
+            "name": "AwaitingReturn"
+          },
+          {
+            "name": "AwaitingConfirmation"
+          },
+          {
+            "name": "Disputed"
+          },
+          {
+            "name": "Completed"
+          },
+          {
+            "name": "RefundedAuto"
+          },
+          {
+            "name": "Resolved"
+          }
+        ]
+      }
+    }
+  ]
+}

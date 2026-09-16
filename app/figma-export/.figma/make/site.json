@@ -1,0 +1,10 @@
+{
+  "description": "Connect with others to rent or list everyday items securely and easily, with clear terms, trusted payments, and seamless rental management.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

@@ -1,0 +1,22 @@
+skip_local_validator = true
+
+[toolchain]
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+greyswan = "2YnarssLwdKPi3Br6C6cUcAuKyyoDagXaHZWo3kykcko"
+
+[programs.devnet]
+greyswan = "2YnarssLwdKPi3Br6C6cUcAuKyyoDagXaHZWo3kykcko"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test"
+
+[hooks]

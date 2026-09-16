@@ -1,0 +1,18 @@
+.anchor
+.DS_Store
+target
+**/*.rs.bk
+node_modules
+test-ledger
+.yarn
+.surfpool
+.env
+.env.*
+!.env.example
+dist
+server/data
+
+# Duplicate/unused Figma Make export artifacts — the extracted files under
+# app/figma-export/src are the ones actually referenced.
+app/figma-export/*.zip
+app/figma-export/src/imports/Screenshot__146_.png
