@@ -379,6 +379,31 @@ export type Greyswan = {
       ]
     },
     {
+      "name": "removeListing",
+      "discriminator": [
+        74,
+        5,
+        236,
+        7,
+        2,
+        104,
+        139,
+        114
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "rentItem",
       "discriminator": [
         182,
@@ -607,6 +632,52 @@ export type Greyswan = {
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "updateListing",
+      "discriminator": [
+        192,
+        174,
+        210,
+        68,
+        116,
+        40,
+        242,
+        253
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "photos",
+          "type": "string"
+        },
+        {
+          "name": "rentalPrice",
+          "type": "u64"
+        },
+        {
+          "name": "depositAmount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -717,7 +788,7 @@ export type Greyswan = {
     {
       "code": 6010,
       "name": "descriptionTooLong",
-      "msg": "Description must be 500 characters or fewer"
+      "msg": "Description must be 1200 characters or fewer"
     },
     {
       "code": 6011,

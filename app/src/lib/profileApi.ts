@@ -20,7 +20,13 @@ export async function saveProfile(pubkey: string, name: string, email: string, t
   })
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? 'Could not save profile.')
+    // Carries the status alongside the message so a 401 here can be told
+    // apart from an ordinary validation error — callers use it to recover
+    // the session (see AuthContext.clearSession) rather than just display
+    // the text and leave the person stuck retrying a dead token forever.
+    const err = new Error(body?.error ?? 'Could not save profile.') as Error & { status?: number }
+    err.status = res.status
+    throw err
   }
   const { profile } = (await res.json()) as { profile: Profile }
   return profile

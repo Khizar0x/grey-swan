@@ -373,6 +373,31 @@
       ]
     },
     {
+      "name": "remove_listing",
+      "discriminator": [
+        74,
+        5,
+        236,
+        7,
+        2,
+        104,
+        139,
+        114
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "rent_item",
       "discriminator": [
         182,
@@ -601,6 +626,52 @@
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "update_listing",
+      "discriminator": [
+        192,
+        174,
+        210,
+        68,
+        116,
+        40,
+        242,
+        253
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "photos",
+          "type": "string"
+        },
+        {
+          "name": "rental_price",
+          "type": "u64"
+        },
+        {
+          "name": "deposit_amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -711,7 +782,7 @@
     {
       "code": 6010,
       "name": "DescriptionTooLong",
-      "msg": "Description must be 500 characters or fewer"
+      "msg": "Description must be 1200 characters or fewer"
     },
     {
       "code": 6011,

@@ -2,8 +2,12 @@ import { PublicKey } from '@solana/web3.js'
 import cors from 'cors'
 import 'dotenv/config'
 import express from 'express'
+import type { NextFunction, Request, Response } from 'express'
 import multer from 'multer'
+import { type AddressRole, getAddress, upsertAddress } from './addresses.js'
 import { issueNonceMessage, issueSessionToken, requireAuth, verifySignInSignature } from './auth.js'
+import { getAdminPubkey } from './config.js'
+import { type DisputeReviewStatus, listDisputeNotes, upsertDisputeNote } from './disputes.js'
 import { getProfile, upsertProfile } from './profiles.js'
 
 // This server exists for one reason: the Pinata JWT must never reach the
@@ -118,6 +122,108 @@ app.post('/api/profile', requireAuth, (req, res) => {
 
   const profile = upsertProfile(pubkey, name.trim(), cleanEmail)
   res.json({ profile })
+})
+
+// Shipping addresses: real PII, off-chain only (see addresses.ts). A
+// rental has exactly two addresses — the renter's delivery address (owner
+// needs it to ship the item out) and the owner's return address (renter
+// needs it to ship the item back) — each writable only by the person it
+// belongs to, and readable only by the two parties of that specific
+// rental, never anyone else who happens to guess a rental pubkey.
+
+const ADDRESS_ROLES: AddressRole[] = ['renter_delivery', 'owner_return']
+
+function isValidRole(value: unknown): value is AddressRole {
+  return typeof value === 'string' && (ADDRESS_ROLES as string[]).includes(value)
+}
+
+app.get('/api/address/:rentalPubkey/:role', requireAuth, (req, res) => {
+  const { rentalPubkey, role } = req.params
+  if (!isValidPubkey(rentalPubkey) || !isValidRole(role)) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+  const row = getAddress(rentalPubkey, role)
+  if (!row) {
+    res.status(404).json({ error: 'Not provided yet.' })
+    return
+  }
+  if (req.authPubkey !== row.owner_pubkey && req.authPubkey !== row.renter_pubkey) {
+    res.status(403).json({ error: "You're not a party to this rental." })
+    return
+  }
+  res.json({ address: row.address })
+})
+
+app.post('/api/address', requireAuth, (req, res) => {
+  const { rentalPubkey, role, ownerPubkey, renterPubkey, address } = req.body ?? {}
+
+  if (!isValidPubkey(rentalPubkey) || !isValidRole(role) || !isValidPubkey(ownerPubkey) || !isValidPubkey(renterPubkey)) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+  if (typeof address !== 'string' || address.trim().length === 0 || address.length > 500) {
+    res.status(400).json({ error: 'Address is required (500 characters max).' })
+    return
+  }
+
+  // Only the party the address belongs to may write it — the renter
+  // supplies their own delivery address, the owner their own return
+  // address, never the other way around.
+  const expectedWriter = role === 'renter_delivery' ? renterPubkey : ownerPubkey
+  if (req.authPubkey !== expectedWriter) {
+    res.status(403).json({ error: 'You can only provide your own address.' })
+    return
+  }
+
+  const row = upsertAddress(rentalPubkey, role, address.trim(), req.authPubkey, ownerPubkey, renterPubkey)
+  res.json({ address: row.address })
+})
+
+// Dispute review notes: the dispute itself (reason, photos, frozen amount)
+// lives on-chain and is read straight from the program on the frontend —
+// this only stores the admin's own review status and free-text note, same
+// off-chain DB as addresses. requireAdmin checks the caller's proven pubkey
+// (from requireAuth) against the Config PDA's admin field read on-chain, so
+// gating isn't just a frontend redirect that a direct API call could skip.
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const admin = await getAdminPubkey()
+    if (req.authPubkey !== admin) {
+      res.status(403).json({ error: 'Admin only.' })
+      return
+    }
+    next()
+  } catch (err) {
+    console.error('Admin check failed:', err)
+    res.status(500).json({ error: 'Could not verify admin access.' })
+  }
+}
+
+const DISPUTE_STATUSES: DisputeReviewStatus[] = ['under_review', 'resolved']
+
+function isValidDisputeStatus(value: unknown): value is DisputeReviewStatus {
+  return typeof value === 'string' && (DISPUTE_STATUSES as string[]).includes(value)
+}
+
+app.get('/api/admin/dispute-notes', requireAuth, requireAdmin, (_req, res) => {
+  res.json({ notes: listDisputeNotes() })
+})
+
+app.post('/api/admin/dispute-notes', requireAuth, requireAdmin, (req, res) => {
+  const { rentalPubkey, status, note } = req.body ?? {}
+
+  if (!isValidPubkey(rentalPubkey) || !isValidDisputeStatus(status)) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+  if (typeof note !== 'string' || note.length > 1000) {
+    res.status(400).json({ error: 'Note must be 1000 characters or fewer.' })
+    return
+  }
+
+  const row = upsertDisputeNote(rentalPubkey, status, note.trim())
+  res.json({ note: row })
 })
 
 app.post('/api/pin', upload.single('file'), async (req, res) => {

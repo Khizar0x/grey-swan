@@ -13,15 +13,18 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.tsx'
 import './index.css'
 import { AuthProvider } from './lib/AuthContext.tsx'
+import { ProfileProvider } from './lib/ProfileContext.tsx'
 import { WalletContextProvider } from './lib/WalletContextProvider.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <WalletContextProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <ProfileProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </ProfileProvider>
       </AuthProvider>
     </WalletContextProvider>
   </StrictMode>,

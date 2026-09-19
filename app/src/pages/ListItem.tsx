@@ -11,14 +11,15 @@ import { listItem } from '../lib/mutations'
 import { saveProfile } from '../lib/profileApi'
 import { useProgram } from '../lib/program'
 import { C, FONT_HEAD, INPUT_STYLE } from '../lib/theme'
-import { useProfile } from '../lib/useProfile'
+import { useProfile } from '../lib/ProfileContext'
+import { withTimeout } from '../lib/withTimeout'
 
 const DEPOSIT_CAP_RATIO = 0.45
 
 export function ListItem() {
   const { connected, publicKey } = useWallet()
   const program = useProgram()
-  const { token, signedIn, signingIn, error: authError, signIn } = useAuthContext()
+  const { token, signedIn, signingIn, error: authError, signIn, clearSession } = useAuthContext()
   const { profile, checked, refetch } = useProfile()
 
   const [itemName, setItemName] = useState('')
@@ -78,8 +79,18 @@ export function ListItem() {
           emailRequired
           submitLabel="Continue"
           onSubmit={async (name, email) => {
-            await saveProfile(publicKey.toBase58(), profile ? profile.name : name, email, token)
-            refetch()
+            try {
+              await saveProfile(publicKey.toBase58(), profile ? profile.name : name, email, token)
+              refetch()
+            } catch (err) {
+              // A 401 here means this token is dead server-side (expired
+              // despite passing the local check, or a session secret
+              // rotation) — clear it so the sign-in gate reappears instead
+              // of leaving the person stuck resubmitting the same form
+              // against the same bad token forever.
+              if (err instanceof Error && (err as Error & { status?: number }).status === 401) clearSession()
+              throw err
+            }
           }}
         />
       </div>
@@ -126,8 +137,8 @@ export function ListItem() {
       setError('Item name must be 50 characters or fewer.')
       return
     }
-    if (description.length > 500) {
-      setError('Description must be 500 characters or fewer.')
+    if (description.length > 1200) {
+      setError('Description must be 1200 characters or fewer.')
       return
     }
     if (!photos || photos.length > 200) {
@@ -156,16 +167,18 @@ export function ListItem() {
 
     setSubmitting(true)
     try {
-      const { signature } = await listItem(program, publicKey, {
-        itemName,
-        description,
-        photos,
-        rentalPriceLamports,
-        depositAmountLamports,
-        estimatedValueLamports,
-        category,
-        rarityTier,
-      })
+      const { signature } = await withTimeout(
+        listItem(program, publicKey, {
+          itemName,
+          description,
+          photos,
+          rentalPriceLamports,
+          depositAmountLamports,
+          estimatedValueLamports,
+          category,
+          rarityTier,
+        }),
+      )
       setResult({ signature, itemName })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -240,7 +253,7 @@ export function ListItem() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Describe your item, its condition, and what's included"
-              maxLength={500}
+              maxLength={1200}
               required
               style={{ ...INPUT_STYLE, resize: 'none' }}
             />

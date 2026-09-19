@@ -51,6 +51,26 @@ pub mod greyswan {
         )
     }
 
+    pub fn update_listing(
+        ctx: Context<UpdateListing>,
+        description: String,
+        photos: String,
+        rental_price: u64,
+        deposit_amount: u64,
+    ) -> Result<()> {
+        crate::instructions::update_listing::handle_update_listing(
+            ctx,
+            description,
+            photos,
+            rental_price,
+            deposit_amount,
+        )
+    }
+
+    pub fn remove_listing(ctx: Context<RemoveListing>) -> Result<()> {
+        crate::instructions::remove_listing::handle_remove_listing(ctx)
+    }
+
     pub fn rent_item(ctx: Context<RentItem>, weeks: u16) -> Result<()> {
         crate::instructions::rent_item::handle_rent_item(ctx, weeks)
     }

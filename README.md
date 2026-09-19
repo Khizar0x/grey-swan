@@ -68,7 +68,7 @@ changing program logic)
 
 ```bash
 anchor build
-cargo test              # 8 tests, programs/greyswan/tests/
+cargo test              # 12 tests, programs/greyswan/tests/
 anchor deploy --provider.cluster devnet
 ```
 
@@ -80,8 +80,9 @@ wallet — don't call it again against the existing deployment.
 ```
 programs/greyswan/src/
   lib.rs                 entrypoint, instruction dispatch
-  instructions/           one file per instruction (list_item, rent_item,
-                           handover, confirm_return, dispute, ...)
+  instructions/           one file per instruction (list_item, update_listing,
+                           remove_listing, rent_item, handover, confirm_return,
+                           dispute, ...)
   state.rs, error.rs      account structs, enums, custom errors
 
 app/src/
@@ -89,8 +90,8 @@ app/src/
   lib/program.ts          Anchor Program client (works signed-in or read-only)
   lib/ipfs.ts             photo upload -> manifest CID
   lib/AuthContext.tsx     wallet-signature sign-in, shared across the app
-  pages/                  one file per screen (Home, ListItem, ListingDetail,
-                           MyRentals, MyListings, RentalHandover)
+  pages/                  one file per screen (Home, ListItem, EditListing,
+                           ListingDetail, MyRentals, MyListings, RentalHandover)
 
 server/src/
   index.ts                route wiring
@@ -105,4 +106,5 @@ server/src/
 - **AI dispute review** — the owner-side dispute path flags a rental and
   freezes funds for admin review; an automated photo-comparison service to
   assist that review doesn't exist yet
-- **Reviews/ratings** — not part of the on-chain program
+- **Reviews/ratings** — deliberately out of scope for now, not built into
+  either the program or the frontend. A future item, not an oversight.

@@ -1,42 +1,88 @@
 import { useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey } from '@solana/web3.js'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Btn, TrustNote } from '../components/atoms'
 import { IconAlert, IconCheck } from '../components/icons'
 import { PhotoManifestField } from '../components/PhotoManifestField'
+import { RetryImage } from '../components/RetryImage'
+import { fetchAddress, saveAddress } from '../lib/addressApi'
+import { useAuthContext } from '../lib/AuthContext'
+import { formatSol } from '../lib/format'
 import { enumKey } from '../lib/listing'
 import { confirmReturn, flagReturnIssue, rejectOnArrival, submitPhase1, submitPhase2, submitPhase3, submitPhase4 } from '../lib/mutations'
 import { useProgram } from '../lib/program'
 import { phaseStepIndex, rentalStatusLabel } from '../lib/rentalStatus'
 import { C, FONT_HEAD, INPUT_STYLE } from '../lib/theme'
+import { usePhotoUrls } from '../lib/usePhotoUrls'
 import type { RentalAccountEntry } from '../lib/useRentals'
+import { withTimeout } from '../lib/withTimeout'
 
 export function RentalHandover() {
   const { pubkey } = useParams<{ pubkey: string }>()
   const program = useProgram()
   const { publicKey } = useWallet()
+  const { token, signedIn, signingIn, error: authError, signIn } = useAuthContext()
 
   const [rental, setRental] = useState<RentalAccountEntry['account'] | null>(null)
   const [loading, setLoading] = useState(true)
-  const [refreshKey, setRefreshKey] = useState(0)
+  // Item name for the completed-rental record — the rental account only
+  // stores the listing's pubkey, not its name.
+  const [listingName, setListingName] = useState<string | null>(null)
 
   const [photos, setPhotos] = useState('')
   const [tracking, setTracking] = useState('')
   const [reason, setReason] = useState('')
+  const [returnAddress, setReturnAddress] = useState('')
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Surfaced when the on-chain step succeeds but a follow-up off-chain save
+  // (currently: the owner's return address at phase 1) fails — previously
+  // swallowed silently, which is exactly what made a failed save look like
+  // a transient "not provided yet" staleness issue to whoever needed it
+  // later, when the data had actually never been written at all.
+  const [addressWarning, setAddressWarning] = useState<string | null>(null)
+  // True when an on-chain step just succeeded but we couldn't confirm the
+  // fresh state afterward — blocks the whole step UI (not just a warning
+  // next to a still-clickable button) until a refetch actually confirms
+  // where things stand, so a second click can't resubmit an already-done
+  // phase and get rejected with PhaseOutOfOrder.
+  const [unconfirmed, setUnconfirmed] = useState(false)
+  // Synchronous guard against double-submission: `busy` is React state, so
+  // its DOM effect (disabling the button) lands on the next paint, not
+  // necessarily before a second, near-simultaneous click event is already
+  // in flight. A ref is checked and set in the same tick runMutation starts,
+  // closing that gap outright rather than relying on render timing — a
+  // duplicate submit is exactly how a legitimate first submission plus a
+  // panicked second click turns into a PhaseOutOfOrder rejection.
+  const mutationInFlightRef = useRef(false)
+
+  // The address the *other* party needs at this step — renter's delivery
+  // address for the owner at step 1 (before shipping out), owner's return
+  // address for the renter at step 3 (before shipping back).
+  const [counterpartyAddress, setCounterpartyAddress] = useState<string | null>(null)
+  const [addressLoading, setAddressLoading] = useState(false)
+
+  // Single source of truth for reading the rental back — used both for the
+  // initial load and, critically, after every mutation below, so the UI
+  // never re-enables an action based on stale local state. Throws on
+  // failure rather than swallowing it, so callers can tell "confirmed
+  // fresh" apart from "couldn't confirm, don't trust what's on screen".
+  const fetchRental = useCallback(async () => {
+    if (!pubkey) return
+    const account = await program.account.rental.fetch(new PublicKey(pubkey))
+    setRental(account)
+  }, [program, pubkey])
 
   useEffect(() => {
-    if (!pubkey) return
     let cancelled = false
     setLoading(true)
-    program.account.rental
-      .fetch(new PublicKey(pubkey))
-      .then((account) => {
-        if (!cancelled) setRental(account)
+    setError(null)
+    fetchRental()
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load this rental — try reloading.")
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -44,7 +90,64 @@ export function RentalHandover() {
     return () => {
       cancelled = true
     }
-  }, [program, pubkey, refreshKey])
+  }, [fetchRental])
+
+  useEffect(() => {
+    if (!rental) {
+      setListingName(null)
+      return
+    }
+    let cancelled = false
+    program.account.listing
+      .fetch(rental.listing)
+      .then((l) => {
+        if (!cancelled) setListingName(l.itemName)
+      })
+      .catch(() => {
+        if (!cancelled) setListingName(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rental, program])
+
+  // Fetch whichever counterparty address is relevant to the step currently
+  // being shown — see the field declaration above for which address that is.
+  useEffect(() => {
+    if (!rental || !publicKey || !token || !pubkey) {
+      setCounterpartyAddress(null)
+      return
+    }
+    const isOwnerNow = publicKey.equals(rental.owner)
+    const isRenterNow = publicKey.equals(rental.renter)
+    const stepNow = Math.min(phaseStepIndex(rental.currentPhase) + 1, 4)
+    const allDoneNow = phaseStepIndex(rental.currentPhase) >= 4
+
+    let role: 'renter_delivery' | 'owner_return' | null = null
+    if (!allDoneNow && stepNow === 1 && isOwnerNow) role = 'renter_delivery'
+    else if (!allDoneNow && stepNow === 3 && isRenterNow) role = 'owner_return'
+
+    if (!role) {
+      setCounterpartyAddress(null)
+      return
+    }
+
+    let cancelled = false
+    setAddressLoading(true)
+    fetchAddress(pubkey, role, token)
+      .then((addr) => {
+        if (!cancelled) setCounterpartyAddress(addr)
+      })
+      .catch(() => {
+        if (!cancelled) setCounterpartyAddress(null)
+      })
+      .finally(() => {
+        if (!cancelled) setAddressLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rental, publicKey, token, pubkey])
 
   if (loading) {
     return (
@@ -62,6 +165,26 @@ export function RentalHandover() {
     )
   }
 
+  if (unconfirmed) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-24 text-center sm:px-6">
+        <p className="mb-4 text-sm" style={{ color: C.rust }}>
+          Your last action was submitted, but we couldn't confirm the update afterward. To avoid resubmitting a step
+          that's already done, this rental is locked until we can load its current state.
+        </p>
+        <Btn
+          onClick={() =>
+            fetchRental()
+              .then(() => setUnconfirmed(false))
+              .catch(() => setUnconfirmed(true))
+          }
+        >
+          Try loading the latest state
+        </Btn>
+      </div>
+    )
+  }
+
   const rentalPubkey = new PublicKey(pubkey)
   const isOwner = publicKey ? publicKey.equals(rental.owner) : false
   const isRenter = publicKey ? publicKey.equals(rental.renter) : false
@@ -69,23 +192,78 @@ export function RentalHandover() {
   const step = Math.min(phaseStepIndex(rental.currentPhase) + 1, 4)
   const allPhasesDone = phaseStepIndex(rental.currentPhase) >= 4
 
-  const refresh = () => setRefreshKey((k) => k + 1)
+  if ((isOwner || isRenter) && !signedIn) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-20 text-center sm:px-6">
+        <h1 className="mb-2 text-2xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+          Sign in to continue
+        </h1>
+        <p className="mb-8 text-sm leading-relaxed" style={{ color: C.muted }}>
+          We need your wallet to sign a message proving you hold it — this rental now involves shipping addresses, which are only shown to the two people directly involved.
+        </p>
+        {authError && (
+          <p className="mb-4 text-sm" style={{ color: C.rust }}>
+            {authError}
+          </p>
+        )}
+        <Btn onClick={() => void signIn()} disabled={signingIn}>
+          {signingIn ? 'Waiting for signature…' : 'Sign in with wallet'}
+        </Btn>
+      </div>
+    )
+  }
 
-  const runMutation = async (fn: () => Promise<unknown>) => {
+  // afterSuccess runs *outside* the wallet-signing timeout — it's for
+  // follow-up work like saving an address to our own server, which doesn't
+  // have the "popup silently dismissed" failure mode withTimeout guards
+  // against, and shouldn't share a budget with the wallet approval itself
+  // (a slow-but-genuine approval could eat most of a short timeout).
+  const runMutation = async (
+    fn: () => Promise<unknown>,
+    afterSuccess?: () => Promise<void>,
+    afterSuccessFailureMessage?: string,
+  ) => {
+    if (mutationInFlightRef.current) return
+    mutationInFlightRef.current = true
     setError(null)
+    setAddressWarning(null)
+    setUnconfirmed(false)
     setBusy(true)
     try {
-      await fn()
+      await withTimeout(fn())
+      if (afterSuccess) {
+        try {
+          await afterSuccess()
+        } catch {
+          // The on-chain step already succeeded — don't present this as a
+          // failure of the whole action, but don't hide it either. Silently
+          // swallowing this is exactly what turned a failed address save
+          // into a confusing, permanent "not provided yet" for whoever
+          // needed it later, with no sign anything had gone wrong here.
+          if (afterSuccessFailureMessage) setAddressWarning(afterSuccessFailureMessage)
+        }
+      }
       setPhotos('')
       setTracking('')
       setReason('')
+      setReturnAddress('')
       setShowDisputeForm(false)
       setShowRejectForm(false)
-      refresh()
+      // Wait for the confirmed on-chain state before this function returns
+      // (and busy clears) — re-enabling the UI on a fire-and-forget refetch
+      // that might still be stale (or might silently fail) is exactly how
+      // a second click ends up resubmitting an already-completed phase and
+      // getting rejected with PhaseOutOfOrder.
+      try {
+        await fetchRental()
+      } catch {
+        setUnconfirmed(true)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
+      mutationInFlightRef.current = false
     }
   }
 
@@ -109,17 +287,48 @@ export function RentalHandover() {
 
   if (statusKey === 'completed' || statusKey === 'resolved' || statusKey === 'refundedAuto') {
     return (
-      <div className="mx-auto max-w-xl px-4 py-20 text-center sm:px-6">
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full" style={{ background: C.primary }}>
-          <IconCheck />
+      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full" style={{ background: C.primary }}>
+            <IconCheck />
+          </div>
+          <h2 className="mb-1 text-2xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+            {listingName ?? 'Rental'}
+          </h2>
+          <p style={{ color: C.muted }}>{rentalStatusLabel(rental.status)}</p>
         </div>
-        <h2 className="mb-3 text-2xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-          {rentalStatusLabel(rental.status)}
-        </h2>
-        <p className="mb-8" style={{ color: C.muted }}>Thank you for using Grey Swan.</p>
-        <Link to="/my-rentals">
-          <Btn>Back to your rentals</Btn>
-        </Link>
+
+        <div className="mb-6 flex flex-col gap-2 rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+          <div className="flex justify-between text-sm">
+            <span style={{ color: C.faint }}>Rental cost</span>
+            <span style={{ color: C.cream }}>
+              {formatSol(rental.totalRentalCost)} · {rental.weeks} week{rental.weeks === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span style={{ color: C.faint }}>Deposit</span>
+            <span style={{ color: C.cream }}>{formatSol(rental.depositAmount)}</span>
+          </div>
+          {rental.disputeReason && (
+            <div className="flex justify-between text-sm">
+              <span style={{ color: C.faint }}>Resolution note</span>
+              <span style={{ color: C.cream }}>"{rental.disputeReason}"</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-6 rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+          <PhaseRecap title="Sent by owner" tracking={rental.outboundTracking} manifestCid={rental.phase1Photos} />
+          <PhaseRecap title="Received by renter" manifestCid={rental.phase2Photos} />
+          <PhaseRecap title="Returned by renter" tracking={rental.returnTracking} manifestCid={rental.phase3Photos} />
+          <PhaseRecap title="Checked by owner" manifestCid={rental.phase4Photos} />
+        </div>
+
+        <div className="mt-8 text-center">
+          <Link to={isOwner ? '/my-listings' : '/my-rentals'}>
+            <Btn>Back to your rentals</Btn>
+          </Link>
+        </div>
       </div>
     )
   }
@@ -160,19 +369,58 @@ export function RentalHandover() {
             {error}
           </p>
         )}
+        {addressWarning && (
+          <p className="mb-4 rounded-xl p-3 text-sm" style={{ background: 'rgba(201,162,62,0.08)', border: '1px solid rgba(201,162,62,0.25)', color: '#B5893A' }}>
+            {addressWarning}
+          </p>
+        )}
 
         {!allPhasesDone && step === 1 && (
           <div className="flex flex-col gap-6">
-            <StepHeader tint="gold" role="Owner · Before sending" title="Show the item before it's sent" body="Add 2–3 clear photos showing its current condition." />
+            <StepHeader
+              tint="gold"
+              role="Owner · Before sending"
+              title="Show the item before it's sent"
+              body="Add up to 5 clear photos showing its current condition, including one clear photo of the shipping label with the tracking number visible."
+            />
             {isOwner ? (
               <>
+                <AddressPanel loading={addressLoading} address={counterpartyAddress} label="Send the item to" />
                 <PhotoManifestField value={photos} onChange={setPhotos} />
                 <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
                   <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Tracking number</label>
                   <input type="text" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Enter tracking number" maxLength={40} style={INPUT_STYLE} />
                 </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Your return address</label>
+                  <p className="mb-2 text-xs" style={{ color: C.faint }}>
+                    Only shown to the renter, once it's time to send the item back.
+                  </p>
+                  <textarea
+                    rows={3}
+                    value={returnAddress}
+                    onChange={(e) => setReturnAddress(e.target.value)}
+                    placeholder="Where should the item come back to?"
+                    maxLength={500}
+                    style={{ ...INPUT_STYLE, resize: 'none' }}
+                  />
+                </div>
                 <TrustNote />
-                <Btn full disabled={busy || !photos || !tracking} onClick={() => runMutation(() => submitPhase1(program, rentalPubkey, rental.owner, photos, tracking))}>
+                <Btn
+                  full
+                  disabled={busy || !photos || !tracking || !returnAddress.trim() || !token}
+                  onClick={() =>
+                    runMutation(
+                      () => submitPhase1(program, rentalPubkey, rental.owner, photos, tracking),
+                      async () => {
+                        if (token) {
+                          await saveAddress(rentalPubkey.toBase58(), 'owner_return', rental.owner.toBase58(), rental.renter.toBase58(), returnAddress.trim(), token)
+                        }
+                      },
+                      "The item's status updated, but we couldn't save your return address — the renter may see \"not provided yet\" when it's time to send it back. Reach out to them directly with it in the meantime.",
+                    )
+                  }
+                >
                   {busy ? 'Submitting…' : 'Continue'}
                 </Btn>
               </>
@@ -184,7 +432,7 @@ export function RentalHandover() {
 
         {!allPhasesDone && step === 2 && (
           <div className="flex flex-col gap-6">
-            <StepHeader tint="rust" role="Renter · On arrival" title="Show us what arrived" body="Add 2–3 clear photos of the item as you received it." />
+            <StepHeader tint="rust" role="Renter · On arrival" title="Show us what arrived" body="Add up to 5 clear photos of the item as you received it." />
             {isRenter ? (
               showRejectForm ? (
                 <>
@@ -222,9 +470,15 @@ export function RentalHandover() {
 
         {!allPhasesDone && step === 3 && (
           <div className="flex flex-col gap-6">
-            <StepHeader tint="gold" role="Renter · Before returning" title="Show the item before you send it back" body="Add 2–3 clear photos showing its condition before return." />
+            <StepHeader
+              tint="gold"
+              role="Renter · Before returning"
+              title="Show the item before you send it back"
+              body="Add up to 5 clear photos showing its condition before return, including one clear photo of the shipping label with the tracking number visible."
+            />
             {isRenter ? (
               <>
+                <AddressPanel loading={addressLoading} address={counterpartyAddress} label="Send it back to" />
                 <PhotoManifestField value={photos} onChange={setPhotos} />
                 <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
                   <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Return tracking number</label>
@@ -243,7 +497,7 @@ export function RentalHandover() {
 
         {!allPhasesDone && step === 4 && (
           <div className="flex flex-col gap-6">
-            <StepHeader tint="green" role="Owner · On return" title="Check the item after its return" body="Add 2–3 clear photos showing the condition it arrived back in." />
+            <StepHeader tint="green" role="Owner · On return" title="Check the item after its return" body="Add up to 5 clear photos showing the condition it arrived back in." />
             {isOwner ? (
               <>
                 <PhotoManifestField value={photos} onChange={setPhotos} />
@@ -336,5 +590,67 @@ function WaitingNote({ text }: { text: string }) {
     <p className="rounded-xl p-4 text-sm" style={{ background: 'rgba(38,34,32,0.03)', border: `1px solid ${C.border}`, color: C.muted }}>
       {text}
     </p>
+  )
+}
+
+function PhaseRecap({ title, tracking, manifestCid }: { title: string; tracking?: string; manifestCid: string }) {
+  const { urls, loading, error, retry } = usePhotoUrls(manifestCid || undefined)
+  if (!manifestCid) return null
+  return (
+    <div>
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide" style={{ color: C.faint }}>
+        {title}
+      </p>
+      {tracking && (
+        <p className="mb-2 text-xs" style={{ color: C.muted }}>
+          Tracking: {tracking}
+        </p>
+      )}
+      {loading ? (
+        <p className="text-xs" style={{ color: C.faint }}>
+          Loading photos…
+        </p>
+      ) : error ? (
+        <div className="flex items-center gap-2">
+          <p className="text-xs" style={{ color: C.rust }}>
+            Couldn't load these photos.
+          </p>
+          <button onClick={retry} className="text-xs underline" style={{ color: C.gold }}>
+            Try again
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-4 gap-2">
+          {urls.map((url, i) => (
+            <div key={i} className="aspect-square overflow-hidden rounded-lg" style={{ border: `1px solid ${C.border}` }}>
+              <RetryImage src={url} alt={`${title} — photo ${i + 1}`} className="h-full w-full object-cover" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AddressPanel({ loading, address, label }: { loading: boolean; address: string | null; label: string }) {
+  return (
+    <div className="rounded-xl p-4" style={{ background: 'rgba(201,162,75,0.08)', border: '1px solid rgba(201,162,75,0.25)' }}>
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide" style={{ color: C.gold }}>
+        {label}
+      </p>
+      {loading ? (
+        <p className="text-sm" style={{ color: C.muted }}>
+          Loading address…
+        </p>
+      ) : address ? (
+        <p className="whitespace-pre-line text-sm" style={{ color: C.cream }}>
+          {address}
+        </p>
+      ) : (
+        <p className="text-sm" style={{ color: C.rust }}>
+          Not provided yet — check back shortly, or ask them to add it.
+        </p>
+      )}
+    </div>
   )
 }

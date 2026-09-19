@@ -36,7 +36,7 @@ pub struct Listing {
     pub owner: Pubkey,
     #[max_len(50)]
     pub item_name: String,
-    #[max_len(500)]
+    #[max_len(1200)]
     pub description: String,
     #[max_len(200)]
     pub photos: String,

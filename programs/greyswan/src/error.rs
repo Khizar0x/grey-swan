@@ -22,7 +22,7 @@ pub enum ErrorCode {
     TimeoutNotElapsed,
     #[msg("Item name must be 50 characters or fewer")]
     ItemNameTooLong,
-    #[msg("Description must be 500 characters or fewer")]
+    #[msg("Description must be 1200 characters or fewer")]
     DescriptionTooLong,
     #[msg("Photos link must be 200 characters or fewer")]
     PhotosLinkTooLong,

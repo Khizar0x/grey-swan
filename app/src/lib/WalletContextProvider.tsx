@@ -7,7 +7,13 @@ import { useMemo, type ReactNode } from 'react'
 // listed here: they register themselves via the Wallet Standard, which the
 // adapter auto-detects. Phantom and Solflare are listed explicitly as a
 // fallback in case standard detection doesn't pick them up.
-const ENDPOINT = clusterApiUrl('devnet')
+//
+// The public api.devnet.solana.com endpoint rate-limits hard under normal
+// app usage (429s), which surfaces as flickering/failed listing loads — a
+// dedicated free-tier RPC (Helius, QuickNode, etc.) fixes this at the
+// source. Falls back to the public endpoint if VITE_RPC_URL isn't set, so
+// the app still runs without it, just with the same rate-limit risk.
+const ENDPOINT = import.meta.env.VITE_RPC_URL || clusterApiUrl('devnet')
 
 export function WalletContextProvider({ children }: { children: ReactNode }) {
   const wallets = useMemo(

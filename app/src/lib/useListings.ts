@@ -1,9 +1,17 @@
 import type { Program } from '@coral-xyz/anchor'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Greyswan } from '../idl/greyswan.ts'
 import { useProgram } from './program'
 
 export type ListingAccountEntry = Awaited<ReturnType<Program<Greyswan>['account']['listing']['all']>>[number]
+
+// getProgramAccounts on a shared public RPC endpoint can briefly lag behind
+// a just-confirmed write — the specific node serving this read may not
+// have caught up with whichever node processed the transaction yet. A
+// single fetch right after creating a listing can come back missing it,
+// with nothing to ever correct it. These silent background refetches catch
+// up without polling indefinitely or flickering the loading state.
+const SETTLE_DELAYS_MS = [2000, 5000]
 
 export function useListings() {
   const program = useProgram()
@@ -11,28 +19,41 @@ export function useListings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const fetchOnce = useCallback(
+    (cancelledRef: { current: boolean }) =>
+      program.account.listing
+        .all()
+        .then((accounts) => {
+          if (!cancelledRef.current) {
+            setListings(accounts)
+            setError(null)
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelledRef.current) setError(err instanceof Error ? err.message : String(err))
+        }),
+    [program],
+  )
+
   useEffect(() => {
-    let cancelled = false
+    const cancelledRef = { current: false }
     setLoading(true)
-    program.account.listing
-      .all()
-      .then((accounts) => {
-        if (!cancelled) {
-          setListings(accounts)
-          setError(null)
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+
+    void fetchOnce(cancelledRef).finally(() => {
+      if (!cancelledRef.current) setLoading(false)
+    })
+
+    const timers = SETTLE_DELAYS_MS.map((delay) => setTimeout(() => void fetchOnce(cancelledRef), delay))
 
     return () => {
-      cancelled = true
+      cancelledRef.current = true
+      timers.forEach(clearTimeout)
     }
-  }, [program])
+  }, [fetchOnce])
 
-  return { listings, loading, error }
+  const refetch = useCallback(() => {
+    void fetchOnce({ current: false })
+  }, [fetchOnce])
+
+  return { listings, loading, error, refetch }
 }

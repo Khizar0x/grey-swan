@@ -5,6 +5,7 @@ import { categoryLabel, enumKey, rarityLabel } from '../lib/listing'
 import { C, FONT_HEAD } from '../lib/theme'
 import { usePhotoUrls } from '../lib/usePhotoUrls'
 import { IconCamera } from './icons'
+import { RetryImage } from './RetryImage'
 
 export interface ListingCardData {
   publicKey: PublicKey
@@ -17,9 +18,12 @@ export interface ListingCardData {
   photos: string
 }
 
-function PhotoPlaceholder() {
+function PhotoPlaceholder({ loading }: { loading?: boolean }) {
   return (
-    <div className="flex aspect-[4/3] items-center justify-center" style={{ background: C.surface2 }}>
+    <div
+      className={`flex aspect-[4/3] items-center justify-center ${loading ? 'animate-pulse' : ''}`}
+      style={{ background: C.surface2 }}
+    >
       <div style={{ color: C.faint }}>
         <IconCamera />
       </div>
@@ -30,7 +34,7 @@ function PhotoPlaceholder() {
 export function ListingCard({ listing }: { listing: ListingCardData }) {
   const owner = `${listing.owner.toBase58().slice(0, 4)}...${listing.owner.toBase58().slice(-4)}`
   const rarity = enumKey(listing.rarityTier)
-  const { urls } = usePhotoUrls(listing.photos)
+  const { urls, loading: photosLoading } = usePhotoUrls(listing.photos)
 
   return (
     <Link
@@ -41,10 +45,10 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
       <div className="relative overflow-hidden">
         {urls[0] ? (
           <div className="aspect-[4/3] overflow-hidden" style={{ background: C.surface2 }}>
-            <img src={urls[0]} alt={listing.itemName} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <RetryImage src={urls[0]} alt={listing.itemName} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
           </div>
         ) : (
-          <PhotoPlaceholder />
+          <PhotoPlaceholder loading={photosLoading} />
         )}
         <div className="absolute right-3 top-3 flex gap-1.5">
           {rarity !== 'common' && (

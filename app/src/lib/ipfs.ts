@@ -13,7 +13,7 @@ interface PhotoManifest {
   photos: string[]
 }
 
-async function pinBlob(blob: Blob, filename: string): Promise<string> {
+export async function pinFile(blob: Blob, filename: string): Promise<string> {
   const form = new FormData()
   form.append('file', blob, filename)
 
@@ -26,23 +26,49 @@ async function pinBlob(blob: Blob, filename: string): Promise<string> {
   return cid
 }
 
-// Uploads each photo individually, then wraps their CIDs in a manifest and
-// pins that too — CLAUDE.md's contract is that on-chain `photos` fields
-// hold one CID pointing at a JSON manifest, not a list of URLs. Returns the
-// manifest's CID, which is what goes into the Anchor instruction argument.
-export async function pinPhotos(files: File[]): Promise<string> {
-  if (files.length === 0) throw new Error('Select at least one photo.')
-
-  const photoCids = await Promise.all(files.map((file) => pinBlob(file, file.name)))
+// Wraps a set of already-pinned photo CIDs in a manifest and pins that too
+// — CLAUDE.md's contract is that on-chain `photos` fields hold one CID
+// pointing at a JSON manifest, not a list of URLs. Split out from
+// pinPhotos() so removing or adding one photo (PhotoManifestField) can
+// rebuild the manifest from the CIDs it already has without re-uploading
+// files that haven't changed.
+export async function pinManifest(photoCids: string[]): Promise<string> {
   const manifest: PhotoManifest = { photos: photoCids }
   const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' })
+  return pinFile(manifestBlob, 'manifest.json')
+}
 
-  return pinBlob(manifestBlob, 'manifest.json')
+// Uploads each photo individually, then pins the manifest referencing them.
+// Returns the manifest's CID, which is what goes into the Anchor
+// instruction argument.
+export async function pinPhotos(files: File[]): Promise<string> {
+  if (files.length === 0) throw new Error('Select at least one photo.')
+  const photoCids = await Promise.all(files.map((file) => pinFile(file, file.name)))
+  return pinManifest(photoCids)
+}
+
+// A freshly-pinned CID can take a few seconds to become resolvable through
+// a public gateway — it's not always available the instant Pinata's upload
+// API returns. Without a retry, a listing page viewed moments after
+// creation would fetch once, fail, and permanently show the placeholder
+// even though the exact same request would succeed a few seconds later.
+async function fetchWithRetry(url: string, attempts = 5, delayMs = 1500): Promise<Response> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const res = await fetch(url)
+      if (res.ok) return res
+      lastError = new Error(`HTTP ${res.status}`)
+    } catch (err) {
+      lastError = err
+    }
+    if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  throw lastError instanceof Error ? lastError : new Error('Could not load photos.')
 }
 
 export async function resolveManifest(cid: string): Promise<string[]> {
-  const res = await fetch(gatewayUrl(cid))
-  if (!res.ok) throw new Error('Could not load photos.')
+  const res = await fetchWithRetry(gatewayUrl(cid))
   const manifest = (await res.json()) as PhotoManifest
   return manifest.photos
 }

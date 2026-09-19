@@ -53,6 +53,27 @@ export async function listItem(
   return { signature, listing }
 }
 
+export async function updateListing(
+  program: Program<Greyswan>,
+  listing: PublicKey,
+  owner: PublicKey,
+  args: {
+    description: string
+    photos: string
+    rentalPriceLamports: number
+    depositAmountLamports: number
+  },
+) {
+  return program.methods
+    .updateListing(args.description, args.photos, new BN(args.rentalPriceLamports), new BN(args.depositAmountLamports))
+    .accounts({ listing, owner })
+    .rpc()
+}
+
+export async function removeListing(program: Program<Greyswan>, listing: PublicKey, owner: PublicKey) {
+  return program.methods.removeListing().accounts({ listing, owner }).rpc()
+}
+
 export async function rentItem(program: Program<Greyswan>, listing: PublicKey, renter: PublicKey, weeks: number) {
   // `rental` has no PDA seeds in the IDL (unlike `listing`) — it's a fresh
   // account, so it needs its own freshly generated keypair to co-sign the
@@ -120,6 +141,38 @@ export async function claimRefund(program: Program<Greyswan>, listing: PublicKey
     .accounts({
       listing,
       rental,
+      renter,
+    })
+    .rpc()
+}
+
+// Admin-only — the program checks the signer against the Config PDA's admin
+// field itself (see dispute.rs), this is just the client-side call. Takes
+// two explicit amounts rather than a single recipient because the program
+// supports a partial split; the admin page only ever calls this with one of
+// the two at zero (see Admin.tsx) for an all-or-nothing payout, but the
+// program enforces the real invariant regardless of what the client sends:
+// ownerAmount + renterAmount must exactly equal the rental's frozen total,
+// and the rental must currently be Disputed (flipping to Resolved on
+// success), so a second call against the same rental fails cleanly instead
+// of double-paying.
+export async function resolveDispute(
+  program: Program<Greyswan>,
+  listing: PublicKey,
+  rental: PublicKey,
+  admin: PublicKey,
+  owner: PublicKey,
+  renter: PublicKey,
+  ownerAmount: BN,
+  renterAmount: BN,
+) {
+  return program.methods
+    .resolveDispute(ownerAmount, renterAmount)
+    .accounts({
+      listing,
+      rental,
+      admin,
+      owner,
       renter,
     })
     .rpc()

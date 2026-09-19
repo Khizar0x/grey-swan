@@ -10,8 +10,14 @@ export function Home() {
   const { listings, loading, error } = useListings()
   const [activeCategory, setActiveCategory] = useState<CategoryKey | 'all'>('all')
 
+  // Explore rentals is for things you can actually rent right now — a
+  // listing currently out on rent (is_available false on-chain, flipped by
+  // rent_item and flipped back by confirm_return) has no business showing
+  // up here just because .all() returns every Listing account regardless
+  // of status.
+  const available = listings.filter((l) => l.account.isAvailable)
   const filtered =
-    activeCategory === 'all' ? listings : listings.filter((l) => enumKey(l.account.category) === activeCategory)
+    activeCategory === 'all' ? available : available.filter((l) => enumKey(l.account.category) === activeCategory)
 
   return (
     <div>

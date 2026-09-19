@@ -33,7 +33,7 @@ pub fn handle_list_item(
     require!(rental_price > 0, crate::error::ErrorCode::InvalidRentalPrice);
     require!(deposit_amount > 0, crate::error::ErrorCode::InvalidDepositAmount);
     require!(item_name.len() <= 50, crate::error::ErrorCode::ItemNameTooLong);
-    require!(description.len() <= 500, crate::error::ErrorCode::DescriptionTooLong);
+    require!(description.len() <= 1200, crate::error::ErrorCode::DescriptionTooLong);
     require!(photos.len() <= 200, crate::error::ErrorCode::PhotosLinkTooLong);
 
     // Deposit cap: only applies to Rare and Antique items

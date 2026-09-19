@@ -1,6 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { C, FONT_HEAD } from '../lib/theme'
-import { IconCamera } from './icons'
 
 export function StarRating({ rating }: { rating: number }) {
   return (
@@ -47,36 +46,6 @@ export function Btn({
   )
 }
 
-export function UploadBox() {
-  return (
-    <div
-      className="flex cursor-pointer flex-col items-center justify-center rounded-xl py-8 transition-all"
-      style={{ border: `2px dashed ${C.border}`, background: 'transparent' }}
-      onMouseEnter={(e) => {
-        ;(e.currentTarget as HTMLDivElement).style.borderColor = C.gold
-      }}
-      onMouseLeave={(e) => {
-        ;(e.currentTarget as HTMLDivElement).style.borderColor = C.border
-      }}
-    >
-      <div
-        className="mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl"
-        style={{ background: 'rgba(38,34,32,0.05)', border: `1px solid ${C.border}` }}
-      >
-        <svg className="h-5 w-5" style={{ color: C.faint }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-        </svg>
-      </div>
-      <div className="flex items-center gap-1.5" style={{ color: C.muted }}>
-        <IconCamera />
-        <p className="text-sm font-medium">Upload photos</p>
-      </div>
-      <p className="mt-0.5 text-xs" style={{ color: C.faint }}>
-        PNG, JPG · 2–3 photos
-      </p>
-    </div>
-  )
-}
 
 export function TrustNote() {
   return (
