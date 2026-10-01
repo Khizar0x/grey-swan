@@ -14,6 +14,11 @@ pub struct Config {
     pub bump: u8,
 }
 
+// New variants must always be appended after the existing ones, never
+// inserted or reordered — Anchor/Borsh encodes a unit-variant enum as a
+// single discriminant byte in declaration order, so reordering would change
+// what every already-deployed Listing account's stored `category` byte
+// means (e.g. an existing "Other" listing silently becoming "Electronics").
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
 pub enum Category {
     PhotographyVideo,
@@ -21,6 +26,12 @@ pub enum Category {
     ToolsEquipment,
     SportsOutdoor,
     Other,
+    Electronics,
+    HomeGarden,
+    EventsParty,
+    FashionCostumes,
+    BabyKids,
+    DigitalCloud,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
