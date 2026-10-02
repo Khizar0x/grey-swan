@@ -46,7 +46,7 @@ The user's mentor explicitly said: write code with AI, but understand the logic.
 **`list_item(item_name, description, photos, rental_price, deposit_amount, estimated_value, category, rarity_tier)`**
 - Creates a PDA at seeds `["listing", owner_pubkey, item_name]`
 - `photos` is a single string: one IPFS CID pointing to a JSON manifest (not a list of URLs)
-- `category`: enum `PhotographyVideo | MusicAudio | ToolsEquipment | SportsOutdoor | Other`
+- `category`: enum `PhotographyVideo | MusicAudio | ToolsEquipment | SportsOutdoor | Other | Electronics | HomeGarden | EventsParty | FashionCostumes | BabyKids | DigitalCloud` — 11 variants (expanded from the original 5; new ones are appended after `Other`, preserving every existing variant's on-chain discriminant byte). This is the live devnet program's actual enum — the separately-published on-chain IDL record still advertises only the original 5 and has not been updated to match.
 - `rarity_tier`: enum `Common | Rare | Antique` — independent from category, not nested
 - Deposit cap: for Rare/Antique only, `deposit_amount` cannot exceed 45% of `estimated_value`
 - Duplicate item names per owner are rejected by the PDA seeds — show a plain message like "You already have an item listed under this name"
