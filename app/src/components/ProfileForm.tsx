@@ -55,7 +55,7 @@ export function ProfileForm({
           Email {emailRequired ? '' : '(optional)'}
         </label>
         <p className="mb-2 text-xs leading-relaxed" style={{ color: C.faint }}>
-          Used only for rental notifications — confirmation deadlines, handover reminders, and deposit release updates.
+          Used only for rental notifications: confirmation deadlines, handover reminders, and deposit release updates.
         </p>
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={254} placeholder="you@example.com" style={INPUT_STYLE} />
       </div>

@@ -8,6 +8,7 @@ import { PhotoManifestField } from '../components/PhotoManifestField'
 import { RetryImage } from '../components/RetryImage'
 import { fetchAddress, saveAddress } from '../lib/addressApi'
 import { useAuthContext } from '../lib/AuthContext'
+import { type DeliveryMethod, fetchDeliveryMethod } from '../lib/deliveryApi'
 import { formatSol } from '../lib/format'
 import { enumKey } from '../lib/listing'
 import { confirmReturn, flagReturnIssue, rejectOnArrival, submitPhase1, submitPhase2, submitPhase3, submitPhase4 } from '../lib/mutations'
@@ -17,6 +18,13 @@ import { C, FONT_HEAD, INPUT_STYLE } from '../lib/theme'
 import { usePhotoUrls } from '../lib/usePhotoUrls'
 import type { RentalAccountEntry } from '../lib/useRentals'
 import { withTimeout } from '../lib/withTimeout'
+
+// The on-chain tracking_number field is required and non-empty for phases 1
+// and 3 regardless of delivery method (see CLAUDE.md — no Rust changes for
+// this feature), so a pickup rental still sends *something* there; this is
+// the sentinel value that means "handed over in person" rather than a real
+// tracking number, recognized below wherever a tracking value is displayed.
+const PICKUP_HANDOVER_NOTE = 'Handed over in person'
 
 export function RentalHandover() {
   const { pubkey } = useParams<{ pubkey: string }>()
@@ -61,9 +69,15 @@ export function RentalHandover() {
 
   // The address the *other* party needs at this step — renter's delivery
   // address for the owner at step 1 (before shipping out), owner's return
-  // address for the renter at step 3 (before shipping back).
+  // address for the renter at step 3 (before shipping back). N/A entirely
+  // for pickup rentals — see deliveryMethod below.
   const [counterpartyAddress, setCounterpartyAddress] = useState<string | null>(null)
   const [addressLoading, setAddressLoading] = useState(false)
+
+  // Chosen by the renter at rent time (see ListingDetail); null while still
+  // loading. Defaults to 'ship' on a missing row so rentals created before
+  // this feature existed keep behaving exactly as they did before.
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod | null>(null)
 
   // Single source of truth for reading the rental back — used both for the
   // initial load and, critically, after every mutation below, so the UI
@@ -82,7 +96,7 @@ export function RentalHandover() {
     setError(null)
     fetchRental()
       .catch(() => {
-        if (!cancelled) setError("Couldn't load this rental — try reloading.")
+        if (!cancelled) setError("Couldn't load this rental. Try reloading.")
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -111,10 +125,32 @@ export function RentalHandover() {
     }
   }, [rental, program])
 
-  // Fetch whichever counterparty address is relevant to the step currently
-  // being shown — see the field declaration above for which address that is.
+  // Delivery method the renter chose at rent time — needed before rendering
+  // any phase UI, since it decides whether that UI asks for a tracking
+  // number and address at all (see the phase-1/phase-3 branches below).
   useEffect(() => {
-    if (!rental || !publicKey || !token || !pubkey) {
+    if (!pubkey || !token) {
+      setDeliveryMethod(null)
+      return
+    }
+    let cancelled = false
+    fetchDeliveryMethod(pubkey, token)
+      .then((method) => {
+        if (!cancelled) setDeliveryMethod(method ?? 'ship')
+      })
+      .catch(() => {
+        if (!cancelled) setDeliveryMethod('ship')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [pubkey, token])
+
+  // Fetch whichever counterparty address is relevant to the step currently
+  // being shown — see the field declaration above for which address that
+  // is. Pickup rentals never have one (see deliveryMethod above).
+  useEffect(() => {
+    if (!rental || !publicKey || !token || !pubkey || deliveryMethod === 'pickup') {
       setCounterpartyAddress(null)
       return
     }
@@ -147,7 +183,7 @@ export function RentalHandover() {
     return () => {
       cancelled = true
     }
-  }, [rental, publicKey, token, pubkey])
+  }, [rental, publicKey, token, pubkey, deliveryMethod])
 
   if (loading) {
     return (
@@ -199,7 +235,7 @@ export function RentalHandover() {
           Sign in to continue
         </h1>
         <p className="mb-8 text-sm leading-relaxed" style={{ color: C.muted }}>
-          We need your wallet to sign a message proving you hold it — this rental now involves shipping addresses, which are only shown to the two people directly involved.
+          We need your wallet to sign a message proving you hold it. This rental now involves shipping addresses, which are only shown to the two people directly involved.
         </p>
         {authError && (
           <p className="mb-4 text-sm" style={{ color: C.rust }}>
@@ -301,13 +337,13 @@ export function RentalHandover() {
         <div className="mb-6 flex flex-col gap-2 rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
           <div className="flex justify-between text-sm">
             <span style={{ color: C.faint }}>Rental cost</span>
-            <span style={{ color: C.cream }}>
+            <span className="font-bold" style={{ color: C.cream }}>
               {formatSol(rental.totalRentalCost)} · {rental.weeks} week{rental.weeks === 1 ? '' : 's'}
             </span>
           </div>
           <div className="flex justify-between text-sm">
             <span style={{ color: C.faint }}>Deposit</span>
-            <span style={{ color: C.cream }}>{formatSol(rental.depositAmount)}</span>
+            <span className="font-bold" style={{ color: C.cream }}>{formatSol(rental.depositAmount)}</span>
           </div>
           {rental.disputeReason && (
             <div className="flex justify-between text-sm">
@@ -353,7 +389,7 @@ export function RentalHandover() {
             >
               {step > s || (allPhasesDone && s <= 4) ? <IconCheck /> : s}
             </div>
-            {i < 3 && <div className="mx-1 h-px flex-1 transition-all" style={{ background: step > s ? 'rgba(62,138,95,0.35)' : C.border }} />}
+            {i < 3 && <div className="mx-1 h-px flex-1 transition-all" style={{ background: step > s ? 'rgba(22,163,74,0.35)' : C.border }} />}
           </div>
         ))}
       </div>
@@ -375,57 +411,76 @@ export function RentalHandover() {
           </p>
         )}
 
-        {!allPhasesDone && step === 1 && (
+        {!allPhasesDone && step === 1 && deliveryMethod && (
           <div className="flex flex-col gap-6">
-            <StepHeader
-              tint="gold"
-              role="Owner · Before sending"
-              title="Show the item before it's sent"
-              body="Add up to 5 clear photos showing its current condition, including one clear photo of the shipping label with the tracking number visible."
-            />
-            {isOwner ? (
-              <>
-                <AddressPanel loading={addressLoading} address={counterpartyAddress} label="Send the item to" />
-                <PhotoManifestField value={photos} onChange={setPhotos} />
-                <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
-                  <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Tracking number</label>
-                  <input type="text" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Enter tracking number" maxLength={40} style={INPUT_STYLE} />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Your return address</label>
-                  <p className="mb-2 text-xs" style={{ color: C.faint }}>
-                    Only shown to the renter, once it's time to send the item back.
-                  </p>
-                  <textarea
-                    rows={3}
-                    value={returnAddress}
-                    onChange={(e) => setReturnAddress(e.target.value)}
-                    placeholder="Where should the item come back to?"
-                    maxLength={500}
-                    style={{ ...INPUT_STYLE, resize: 'none' }}
-                  />
-                </div>
-                <TrustNote />
-                <Btn
-                  full
-                  disabled={busy || !photos || !tracking || !returnAddress.trim() || !token}
-                  onClick={() =>
-                    runMutation(
-                      () => submitPhase1(program, rentalPubkey, rental.owner, photos, tracking),
-                      async () => {
-                        if (token) {
-                          await saveAddress(rentalPubkey.toBase58(), 'owner_return', rental.owner.toBase58(), rental.renter.toBase58(), returnAddress.trim(), token)
-                        }
-                      },
-                      "The item's status updated, but we couldn't save your return address — the renter may see \"not provided yet\" when it's time to send it back. Reach out to them directly with it in the meantime.",
-                    )
-                  }
-                >
-                  {busy ? 'Submitting…' : 'Continue'}
-                </Btn>
-              </>
+            {deliveryMethod === 'pickup' ? (
+              <StepHeader
+                tint="gold"
+                role="Owner · Before handover"
+                title="Show the item before handover"
+                body="Add up to 5 clear photos showing its current condition."
+              />
             ) : (
-              <WaitingNote text="Waiting for the owner to send the item." />
+              <StepHeader
+                tint="gold"
+                role="Owner · Before sending"
+                title="Show the item before it's sent"
+                body="Add up to 5 clear photos showing its current condition, including one clear photo of the shipping label with the tracking number visible."
+              />
+            )}
+            {isOwner ? (
+              deliveryMethod === 'pickup' ? (
+                <>
+                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  <TrustNote />
+                  <Btn full disabled={busy || !photos} onClick={() => runMutation(() => submitPhase1(program, rentalPubkey, rental.owner, photos, PICKUP_HANDOVER_NOTE))}>
+                    {busy ? 'Submitting…' : 'Handed over in person'}
+                  </Btn>
+                </>
+              ) : (
+                <>
+                  <AddressPanel loading={addressLoading} address={counterpartyAddress} label="Send the item to" />
+                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
+                    <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Tracking number</label>
+                    <input type="text" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Enter tracking number" maxLength={40} style={INPUT_STYLE} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Your return address</label>
+                    <p className="mb-2 text-xs" style={{ color: C.faint }}>
+                      Only shown to the renter, once it's time to send the item back.
+                    </p>
+                    <textarea
+                      rows={3}
+                      value={returnAddress}
+                      onChange={(e) => setReturnAddress(e.target.value)}
+                      placeholder="Where should the item come back to?"
+                      maxLength={500}
+                      style={{ ...INPUT_STYLE, resize: 'none' }}
+                    />
+                  </div>
+                  <TrustNote />
+                  <Btn
+                    full
+                    disabled={busy || !photos || !tracking || !returnAddress.trim() || !token}
+                    onClick={() =>
+                      runMutation(
+                        () => submitPhase1(program, rentalPubkey, rental.owner, photos, tracking),
+                        async () => {
+                          if (token) {
+                            await saveAddress(rentalPubkey.toBase58(), 'owner_return', rental.owner.toBase58(), rental.renter.toBase58(), returnAddress.trim(), token)
+                          }
+                        },
+                        "The item's status updated, but we couldn't save your return address. The renter may see \"not provided yet\" when it's time to send it back, so reach out to them directly with it in the meantime.",
+                      )
+                    }
+                  >
+                    {busy ? 'Submitting…' : 'Continue'}
+                  </Btn>
+                </>
+              )
+            ) : (
+              <WaitingNote text={deliveryMethod === 'pickup' ? 'Waiting for the owner to hand over the item.' : 'Waiting for the owner to send the item.'} />
             )}
           </div>
         )}
@@ -468,29 +523,48 @@ export function RentalHandover() {
           </div>
         )}
 
-        {!allPhasesDone && step === 3 && (
+        {!allPhasesDone && step === 3 && deliveryMethod && (
           <div className="flex flex-col gap-6">
-            <StepHeader
-              tint="gold"
-              role="Renter · Before returning"
-              title="Show the item before you send it back"
-              body="Add up to 5 clear photos showing its condition before return, including one clear photo of the shipping label with the tracking number visible."
-            />
-            {isRenter ? (
-              <>
-                <AddressPanel loading={addressLoading} address={counterpartyAddress} label="Send it back to" />
-                <PhotoManifestField value={photos} onChange={setPhotos} />
-                <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
-                  <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Return tracking number</label>
-                  <input type="text" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Enter tracking number" maxLength={40} style={INPUT_STYLE} />
-                </div>
-                <TrustNote />
-                <Btn full disabled={busy || !photos || !tracking} onClick={() => runMutation(() => submitPhase3(program, rentalPubkey, rental.renter, photos, tracking))}>
-                  {busy ? 'Submitting…' : 'Continue'}
-                </Btn>
-              </>
+            {deliveryMethod === 'pickup' ? (
+              <StepHeader
+                tint="gold"
+                role="Renter · Before returning"
+                title="Show the item before you hand it back"
+                body="Add up to 5 clear photos showing its condition before you return it."
+              />
             ) : (
-              <WaitingNote text="Waiting for the renter to send the item back." />
+              <StepHeader
+                tint="gold"
+                role="Renter · Before returning"
+                title="Show the item before you send it back"
+                body="Add up to 5 clear photos showing its condition before return, including one clear photo of the shipping label with the tracking number visible."
+              />
+            )}
+            {isRenter ? (
+              deliveryMethod === 'pickup' ? (
+                <>
+                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  <TrustNote />
+                  <Btn full disabled={busy || !photos} onClick={() => runMutation(() => submitPhase3(program, rentalPubkey, rental.renter, photos, PICKUP_HANDOVER_NOTE))}>
+                    {busy ? 'Submitting…' : 'Handed over in person'}
+                  </Btn>
+                </>
+              ) : (
+                <>
+                  <AddressPanel loading={addressLoading} address={counterpartyAddress} label="Send it back to" />
+                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
+                    <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Return tracking number</label>
+                    <input type="text" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Enter tracking number" maxLength={40} style={INPUT_STYLE} />
+                  </div>
+                  <TrustNote />
+                  <Btn full disabled={busy || !photos || !tracking} onClick={() => runMutation(() => submitPhase3(program, rentalPubkey, rental.renter, photos, tracking))}>
+                    {busy ? 'Submitting…' : 'Continue'}
+                  </Btn>
+                </>
+              )
+            ) : (
+              <WaitingNote text={deliveryMethod === 'pickup' ? 'Waiting for the renter to hand back the item.' : 'Waiting for the renter to send the item back.'} />
             )}
           </div>
         )}
@@ -566,9 +640,9 @@ export function RentalHandover() {
 
 function StepHeader({ tint, role, title, body }: { tint: 'gold' | 'rust' | 'green'; role: string; title: string; body: string }) {
   const tints = {
-    gold: { background: 'rgba(201,162,75,0.12)', border: '1px solid rgba(201,162,75,0.25)', color: C.gold },
+    gold: { background: 'rgba(255,107,53,0.12)', border: '1px solid rgba(255,107,53,0.25)', color: C.gold },
     rust: { background: 'rgba(196,102,79,0.12)', border: '1px solid rgba(196,102,79,0.25)', color: C.rust },
-    green: { background: 'rgba(62,138,95,0.10)', border: '1px solid rgba(62,138,95,0.22)', color: C.green },
+    green: { background: 'rgba(22,163,74,0.10)', border: '1px solid rgba(22,163,74,0.22)', color: C.green },
   }
   return (
     <div>
@@ -603,7 +677,7 @@ function PhaseRecap({ title, tracking, manifestCid }: { title: string; tracking?
       </p>
       {tracking && (
         <p className="mb-2 text-xs" style={{ color: C.muted }}>
-          Tracking: {tracking}
+          {tracking === PICKUP_HANDOVER_NOTE ? tracking : `Tracking: ${tracking}`}
         </p>
       )}
       {loading ? (
@@ -634,7 +708,7 @@ function PhaseRecap({ title, tracking, manifestCid }: { title: string; tracking?
 
 function AddressPanel({ loading, address, label }: { loading: boolean; address: string | null; label: string }) {
   return (
-    <div className="rounded-xl p-4" style={{ background: 'rgba(201,162,75,0.08)', border: '1px solid rgba(201,162,75,0.25)' }}>
+    <div className="rounded-xl p-4" style={{ background: 'rgba(255,107,53,0.08)', border: '1px solid rgba(255,107,53,0.25)' }}>
       <p className="mb-1 text-xs font-medium uppercase tracking-wide" style={{ color: C.gold }}>
         {label}
       </p>
@@ -648,7 +722,7 @@ function AddressPanel({ loading, address, label }: { loading: boolean; address: 
         </p>
       ) : (
         <p className="text-sm" style={{ color: C.rust }}>
-          Not provided yet — check back shortly, or ask them to add it.
+          Not provided yet. Check back shortly, or ask them to add it.
         </p>
       )}
     </div>

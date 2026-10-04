@@ -168,7 +168,7 @@ export function EditListing() {
           Edit {listing.itemName}
         </h1>
         <p className="text-sm" style={{ color: C.faint }}>
-          {categoryLabel(listing.category)} · {rarityLabel(listing.rarityTier)} — name, category, and rarity can't be changed after listing.
+          {categoryLabel(listing.category)} · {rarityLabel(listing.rarityTier)}. Name, category, and rarity can't be changed after listing.
         </p>
       </div>
 

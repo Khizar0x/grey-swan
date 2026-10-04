@@ -896,6 +896,24 @@ export type Greyswan = {
           },
           {
             "name": "other"
+          },
+          {
+            "name": "electronics"
+          },
+          {
+            "name": "homeGarden"
+          },
+          {
+            "name": "eventsParty"
+          },
+          {
+            "name": "fashionCostumes"
+          },
+          {
+            "name": "babyKids"
+          },
+          {
+            "name": "digitalCloud"
           }
         ]
       }

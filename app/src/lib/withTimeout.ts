@@ -5,7 +5,7 @@
 // button stays stuck in its loading state permanently with no way to retry
 // short of a page reload. Every wallet-signing call site wraps its call in
 // this so an abandoned popup fails loudly instead of hanging silently.
-export function withTimeout<T>(promise: Promise<T>, ms = 10_000, message = "Wallet didn't respond — try again."): Promise<T> {
+export function withTimeout<T>(promise: Promise<T>, ms = 10_000, message = "Wallet didn't respond. Try again."): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), ms)
     promise.then(

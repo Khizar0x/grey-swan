@@ -47,6 +47,18 @@ export function getAddress(rentalPubkey: string, role: AddressRole): AddressRow 
     | undefined
 }
 
+// A renter's most recently saved delivery address, across any of their past
+// rentals — used to pre-fill a new rental's address form rather than asking
+// a repeat renter to retype it every time. Owner return addresses are
+// deliberately excluded (role is fixed to 'renter_delivery'): the two are
+// unrelated — an owner's own return address is never a stand-in for a
+// renter's delivery address.
+export function getLatestRenterAddress(renterPubkey: string): AddressRow | undefined {
+  return db
+    .prepare('SELECT * FROM addresses WHERE role = ? AND renter_pubkey = ? ORDER BY updated_at DESC LIMIT 1')
+    .get('renter_delivery', renterPubkey) as AddressRow | undefined
+}
+
 export function upsertAddress(
   rentalPubkey: string,
   role: AddressRole,

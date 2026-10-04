@@ -4,10 +4,12 @@ import 'dotenv/config'
 import express from 'express'
 import type { NextFunction, Request, Response } from 'express'
 import multer from 'multer'
-import { type AddressRole, getAddress, upsertAddress } from './addresses.js'
+import { type AddressRole, getAddress, getLatestRenterAddress, upsertAddress } from './addresses.js'
 import { issueNonceMessage, issueSessionToken, requireAuth, verifySignInSignature } from './auth.js'
 import { getAdminPubkey } from './config.js'
+import { type DeliveryMethod, getDeliveryMethod, upsertDeliveryMethod } from './delivery.js'
 import { type DisputeReviewStatus, listDisputeNotes, upsertDisputeNote } from './disputes.js'
+import { getAllListingAreas, getListingArea, upsertListingArea } from './listingAreas.js'
 import { getProfile, upsertProfile } from './profiles.js'
 
 // This server exists for one reason: the Pinata JWT must never reach the
@@ -137,6 +139,31 @@ function isValidRole(value: unknown): value is AddressRole {
   return typeof value === 'string' && (ADDRESS_ROLES as string[]).includes(value)
 }
 
+// Registered before the ":rentalPubkey/:role" route below — both are
+// "/api/address/<segment>/<segment>" in shape, and Express matches top to
+// bottom, so this specific route must come first or "/api/address/latest/X"
+// would be swallowed by the generic one (rentalPubkey="latest", role="X").
+app.get('/api/address/latest/:renterPubkey', requireAuth, (req, res) => {
+  const { renterPubkey } = req.params
+  if (!isValidPubkey(renterPubkey)) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+  // A renter's own saved addresses are theirs alone to read back — unlike a
+  // specific rental's address (shared with the other party to that rental),
+  // there's no second party to this cross-rental lookup.
+  if (req.authPubkey !== renterPubkey) {
+    res.status(403).json({ error: 'You can only look up your own saved address.' })
+    return
+  }
+  const row = getLatestRenterAddress(renterPubkey)
+  if (!row) {
+    res.status(404).json({ error: 'No saved address yet.' })
+    return
+  }
+  res.json({ address: row.address })
+})
+
 app.get('/api/address/:rentalPubkey/:role', requireAuth, (req, res) => {
   const { rentalPubkey, role } = req.params
   if (!isValidPubkey(rentalPubkey) || !isValidRole(role)) {
@@ -178,6 +205,101 @@ app.post('/api/address', requireAuth, (req, res) => {
 
   const row = upsertAddress(rentalPubkey, role, address.trim(), req.authPubkey, ownerPubkey, renterPubkey)
   res.json({ address: row.address })
+})
+
+// Delivery method: ship vs. local pickup, chosen by the renter at rent
+// time. Not PII like a shipping address, but still specific to one rental —
+// same access shape as addresses above (readable by either party, writable
+// only by the renter who chose it).
+
+const DELIVERY_METHODS: DeliveryMethod[] = ['ship', 'pickup']
+
+function isValidDeliveryMethod(value: unknown): value is DeliveryMethod {
+  return typeof value === 'string' && (DELIVERY_METHODS as string[]).includes(value)
+}
+
+app.get('/api/delivery/:rentalPubkey', requireAuth, (req, res) => {
+  const { rentalPubkey } = req.params
+  if (!isValidPubkey(rentalPubkey)) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+  const row = getDeliveryMethod(rentalPubkey)
+  if (!row) {
+    res.status(404).json({ error: 'Not set.' })
+    return
+  }
+  if (req.authPubkey !== row.owner_pubkey && req.authPubkey !== row.renter_pubkey) {
+    res.status(403).json({ error: "You're not a party to this rental." })
+    return
+  }
+  res.json({ method: row.method })
+})
+
+app.post('/api/delivery', requireAuth, (req, res) => {
+  const { rentalPubkey, method, ownerPubkey, renterPubkey } = req.body ?? {}
+
+  if (!isValidPubkey(rentalPubkey) || !isValidDeliveryMethod(method) || !isValidPubkey(ownerPubkey) || !isValidPubkey(renterPubkey)) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+  // Only the renter chooses how their own rental gets delivered.
+  if (req.authPubkey !== renterPubkey) {
+    res.status(403).json({ error: 'Only the renter can set the delivery method.' })
+    return
+  }
+
+  const row = upsertDeliveryMethod(rentalPubkey, method, ownerPubkey, renterPubkey)
+  res.json({ method: row.method })
+})
+
+// Listing areas: a coarse, public location (city, neighborhood, or
+// postcode — never a full address) an owner attaches to their listing so a
+// renter considering local pickup can judge distance before committing.
+// Unlike addresses/delivery above, this exists before any rental and is
+// meant to be readable by anyone browsing, so the GET has no auth gate; only
+// the write is restricted, to the listing's owner.
+
+// Bulk variant for the browse page, which needs every listing's area at
+// once to compute "available in your area" — same public, no-auth read as
+// the single-listing route above, just batched.
+app.get('/api/listing-areas', (_req, res) => {
+  const rows = getAllListingAreas()
+  res.json({ areas: Object.fromEntries(rows.map((r) => [r.listing_pubkey, r.area])) })
+})
+
+app.get('/api/listing-area/:listingPubkey', (req, res) => {
+  const { listingPubkey } = req.params
+  if (!isValidPubkey(listingPubkey)) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+  const row = getListingArea(listingPubkey)
+  if (!row) {
+    res.status(404).json({ error: 'Not set.' })
+    return
+  }
+  res.json({ area: row.area })
+})
+
+app.post('/api/listing-area', requireAuth, (req, res) => {
+  const { listingPubkey, ownerPubkey, area } = req.body ?? {}
+
+  if (!isValidPubkey(listingPubkey) || !isValidPubkey(ownerPubkey)) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+  if (typeof area !== 'string' || area.trim().length === 0 || area.length > 120) {
+    res.status(400).json({ error: 'General area is required (120 characters max).' })
+    return
+  }
+  if (req.authPubkey !== ownerPubkey) {
+    res.status(403).json({ error: 'You can only set the area for your own listing.' })
+    return
+  }
+
+  const row = upsertListingArea(listingPubkey, ownerPubkey, area.trim())
+  res.json({ area: row.area })
 })
 
 // Dispute review notes: the dispute itself (reason, photos, frozen amount)

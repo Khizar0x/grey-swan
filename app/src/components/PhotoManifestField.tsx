@@ -23,6 +23,10 @@ export function PhotoManifestField({ value, onChange }: { value: string; onChang
   const initializedRef = useRef(false)
   const [entries, setEntries] = useState<PhotoEntry[]>([])
   const [uploading, setUploading] = useState(false)
+  // Only set during addFiles (real file uploads worth showing a percentage
+  // for) — null during removePhoto's manifest-only re-pin, which is small
+  // enough not to need one.
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -46,8 +50,26 @@ export function PhotoManifestField({ value, onChange }: { value: string; onChang
     }
 
     setUploading(true)
+    setUploadPercent(0)
+    // Aggregate percentage across every file in this batch (uploaded in
+    // parallel), weighted by each file's actual size — a bar that just
+    // averaged per-file fractions would jump unevenly if one photo is much
+    // bigger than the others.
+    const loadedByFile = new Array<number>(files.length).fill(0)
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0) || 1
+    const reportProgress = () => {
+      const loaded = loadedByFile.reduce((a, b) => a + b, 0)
+      setUploadPercent(Math.min(100, Math.round((loaded / totalBytes) * 100)))
+    }
     try {
-      const newCids = await Promise.all(files.map((file) => pinFile(file, file.name)))
+      const newCids = await Promise.all(
+        files.map((file, i) =>
+          pinFile(file, file.name, (loadedBytes) => {
+            loadedByFile[i] = loadedBytes
+            reportProgress()
+          }),
+        ),
+      )
       const nextEntries = [...entries, ...newCids.map((cid) => ({ cid, url: gatewayUrl(cid) }))]
       const manifestCid = await pinManifest(nextEntries.map((e) => e.cid))
       setEntries(nextEntries)
@@ -56,6 +78,7 @@ export function PhotoManifestField({ value, onChange }: { value: string; onChang
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setUploading(false)
+      setUploadPercent(null)
       if (inputRef.current) inputRef.current.value = ''
     }
   }
@@ -117,21 +140,35 @@ export function PhotoManifestField({ value, onChange }: { value: string; onChang
           }}
         >
           <input ref={inputRef} type="file" accept="image/*" multiple hidden onChange={(e) => addFiles(e.target.files)} />
-          <div
-            className="mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl"
-            style={{ background: 'rgba(38,34,32,0.05)', border: `1px solid ${C.border}` }}
-          >
-            <svg className="h-5 w-5" style={{ color: C.faint }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-            </svg>
-          </div>
-          <div className="flex items-center gap-1.5" style={{ color: C.muted }}>
-            <IconCamera />
-            <p className="text-sm font-medium">{uploading ? 'Uploading…' : entries.length > 0 ? 'Add more photos' : 'Upload photos'}</p>
-          </div>
-          <p className="mt-0.5 text-xs" style={{ color: C.faint }}>
-            PNG, JPG · up to {MAX_PHOTOS} photos
-          </p>
+          {uploadPercent !== null ? (
+            <div className="w-full max-w-[220px] px-4">
+              <div className="mb-1.5 flex items-center justify-between text-xs font-medium" style={{ color: C.muted }}>
+                <span>Uploading…</span>
+                <span>{uploadPercent}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: C.border }}>
+                <div className="h-full rounded-full transition-[width]" style={{ width: `${uploadPercent}%`, background: C.primary }} />
+              </div>
+            </div>
+          ) : (
+            <>
+              <div
+                className="mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl"
+                style={{ background: 'rgba(38,34,32,0.05)', border: `1px solid ${C.border}` }}
+              >
+                <svg className="h-5 w-5" style={{ color: C.faint }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
+                </svg>
+              </div>
+              <div className="flex items-center gap-1.5" style={{ color: C.muted }}>
+                <IconCamera />
+                <p className="text-sm font-medium">{uploading ? 'Updating…' : entries.length > 0 ? 'Add more photos' : 'Upload photos'}</p>
+              </div>
+              <p className="mt-0.5 text-xs" style={{ color: C.faint }}>
+                PNG, JPG · up to {MAX_PHOTOS} photos
+              </p>
+            </>
+          )}
         </div>
       )}
 

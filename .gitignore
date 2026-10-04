@@ -16,3 +16,4 @@ server/data
 # app/figma-export/src are the ones actually referenced.
 app/figma-export/*.zip
 app/figma-export/src/imports/Screenshot__146_.png
+app/.verify/

@@ -3,18 +3,20 @@ import { PublicKey } from '@solana/web3.js'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconCamera, IconCheck } from '../components/icons'
+import { RetryImage } from '../components/RetryImage'
 import { formatSol } from '../lib/format'
-import { enumKey } from '../lib/listing'
+import { categoryColor, categoryLabel, enumKey } from '../lib/listing'
 import { removeListing } from '../lib/mutations'
 import { useProgram } from '../lib/program'
+import { usePhotoUrls } from '../lib/usePhotoUrls'
 import { rentalStatusLabel, rentalStatusStyle, type StatusStyle } from '../lib/rentalStatus'
 import { C, FONT_HEAD } from '../lib/theme'
-import { useListings } from '../lib/useListings'
+import { useListings, type ListingAccountEntry } from '../lib/useListings'
 import type { RentalAccountEntry } from '../lib/useRentals'
 import { useRentals } from '../lib/useRentals'
 import { withTimeout } from '../lib/withTimeout'
 
-const AVAILABLE_STYLE: StatusStyle = { background: 'rgba(62,138,95,0.10)', color: C.green, border: '1px solid rgba(62,138,95,0.22)' }
+const AVAILABLE_STYLE: StatusStyle = { background: 'rgba(22,163,74,0.10)', color: C.green, border: '1px solid rgba(22,163,74,0.22)' }
 
 // A rental is "in progress" for this page's purposes if it hasn't reached a
 // terminal state yet — used to find the one active rental (if any) tied to
@@ -22,6 +24,150 @@ const AVAILABLE_STYLE: StatusStyle = { background: 'rgba(62,138,95,0.10)', color
 function isTerminalStatus(status: Record<string, object>): boolean {
   const key = enumKey(status)
   return key === 'completed' || key === 'refundedAuto' || key === 'resolved'
+}
+
+function PhotoPlaceholder({ loading }: { loading?: boolean }) {
+  return (
+    <div className={`flex aspect-square items-center justify-center ${loading ? 'animate-pulse' : ''}`} style={{ background: C.surface2 }}>
+      <div style={{ color: C.faint }}>
+        <IconCamera />
+      </div>
+    </div>
+  )
+}
+
+// Card style deliberately matches ListingCard.tsx (the homepage grid) —
+// same photo aspect ratio, category badge, and bold price — so this reads
+// as the same marketplace rather than a separate admin-y list.
+function ListingCard({
+  listing,
+  rental,
+  removing,
+  confirmingRemove,
+  onConfirmRemove,
+  onCancelRemove,
+  onRemove,
+}: {
+  listing: ListingAccountEntry
+  rental: RentalAccountEntry | undefined
+  removing: boolean
+  confirmingRemove: boolean
+  onConfirmRemove: () => void
+  onCancelRemove: () => void
+  onRemove: () => void
+}) {
+  const pubkeyStr = listing.publicKey.toBase58()
+  const { urls, loading: photosLoading } = usePhotoUrls(listing.account.photos)
+  const catColor = categoryColor(listing.account.category)
+  const style = rental ? rentalStatusStyle(rental.account.status) : AVAILABLE_STYLE
+  const label = rental ? rentalStatusLabel(rental.account.status) : 'Available to rent'
+  const statusKey = rental ? enumKey(rental.account.status) : null
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl transition-all hover:shadow-md" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+      <Link to={`/listing/${pubkeyStr}`} className="relative block">
+        {urls[0] ? (
+          <div className="aspect-square overflow-hidden" style={{ background: C.surface2 }}>
+            <RetryImage src={urls[0]} alt={listing.account.itemName} className="h-full w-full object-cover" />
+          </div>
+        ) : (
+          <PhotoPlaceholder loading={photosLoading} />
+        )}
+        <span className="absolute left-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ background: catColor, color: '#FFFFFF' }}>
+          {categoryLabel(listing.account.category)}
+        </span>
+      </Link>
+
+      <div className="flex flex-1 flex-col gap-2 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <Link to={`/listing/${pubkeyStr}`} className="min-w-0">
+            <h3 className="truncate text-sm font-bold leading-snug" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+              {listing.account.itemName}
+            </h3>
+          </Link>
+          <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold" style={style}>
+            {label}
+          </span>
+        </div>
+
+        <div>
+          <span className="text-sm font-bold" style={{ color: C.cream }}>
+            {formatSol(listing.account.rentalPrice)}
+          </span>
+          <span className="text-xs" style={{ color: C.faint }}>
+            {' '}
+            /week + {formatSol(listing.account.depositAmount)} deposit
+          </span>
+        </div>
+
+        {rental && (
+          <p className="text-xs" style={{ color: C.faint }}>
+            Rented by {rental.account.renter.toBase58().slice(0, 4)}...{rental.account.renter.toBase58().slice(-4)}
+            <br />
+            <span style={{ color: C.trust, fontWeight: 600 }}>{formatSol(rental.account.depositAmount)} deposit safely held</span>
+          </p>
+        )}
+
+        <div className="mt-auto flex flex-wrap gap-1.5 pt-1.5">
+          {rental ? (
+            <>
+              <Link
+                to={`/rental/${rental.publicKey.toBase58()}`}
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all hover:opacity-80"
+                style={{ color: C.cream, border: `1px solid ${C.border}`, background: 'transparent' }}
+              >
+                <IconCamera />
+                Handover
+              </Link>
+              {statusKey === 'awaitingConfirmation' && (
+                <Link
+                  to={`/rental/${rental.publicKey.toBase58()}`}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-all hover:opacity-90"
+                  style={{ background: C.primary, color: C.onAccent }}
+                >
+                  <IconCheck />
+                  Confirm return
+                </Link>
+              )}
+            </>
+          ) : (
+            <>
+              <Link
+                to={`/listing/${pubkeyStr}/edit`}
+                className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all hover:opacity-80"
+                style={{ color: C.cream, border: `1px solid ${C.border}`, background: 'transparent' }}
+              >
+                Edit
+              </Link>
+              {confirmingRemove ? (
+                <>
+                  <button
+                    onClick={onRemove}
+                    disabled={removing}
+                    className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                    style={{ background: C.rust, color: C.onAccent }}
+                  >
+                    {removing ? 'Removing…' : 'Confirm'}
+                  </button>
+                  <button onClick={onCancelRemove} className="whitespace-nowrap rounded-lg px-2 py-1.5 text-xs" style={{ color: C.faint }}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={onConfirmRemove}
+                  className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all hover:opacity-80"
+                  style={{ color: C.rust, border: '1px solid rgba(184,92,66,0.35)', background: 'transparent' }}
+                >
+                  Remove
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function MyListings() {
@@ -67,7 +213,7 @@ export function MyListings() {
   const loading = listingsLoading || rentalsLoading
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="mb-1 text-3xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
@@ -79,10 +225,10 @@ export function MyListings() {
         </div>
         {publicKey && myListings.length > 0 && (
           <div className="shrink-0 text-right">
-            <p className="font-semibold" style={{ color: C.cream }}>
+            <p className="font-bold" style={{ color: C.cream }}>
               {activeCount} active rental{activeCount === 1 ? '' : 's'}
             </p>
-            <p className="text-sm" style={{ color: C.faint }}>
+            <p className="text-sm font-bold" style={{ color: C.trust }}>
               {formatSol(totalDepositHeld)} deposit safely held
             </p>
           </div>
@@ -115,98 +261,21 @@ export function MyListings() {
         </p>
       )}
 
-      <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {myListings.map((l) => {
           const pubkeyStr = l.publicKey.toBase58()
           const rental = activeRentalByListing.get(pubkeyStr)
-          const style = rental ? rentalStatusStyle(rental.account.status) : AVAILABLE_STYLE
-          const label = rental ? rentalStatusLabel(rental.account.status) : 'Available to rent'
-          const statusKey = rental ? enumKey(rental.account.status) : null
-          const isConfirmingRemove = confirmingRemove === pubkeyStr
-
           return (
-            <div key={pubkeyStr} className="overflow-hidden rounded-2xl" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-              <div className="flex flex-col gap-5 p-5 sm:flex-row">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <h3 className="text-base font-semibold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-                      {l.account.itemName}
-                    </h3>
-                    <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium" style={style}>
-                      {label}
-                    </span>
-                  </div>
-                  <p className="mb-1 text-sm" style={{ color: C.muted }}>
-                    {formatSol(l.account.rentalPrice)}/week + {formatSol(l.account.depositAmount)} deposit
-                  </p>
-                  {rental && (
-                    <p className="text-xs" style={{ color: C.faint }}>
-                      Rented by {rental.account.renter.toBase58().slice(0, 4)}...{rental.account.renter.toBase58().slice(-4)} ·{' '}
-                      {formatSol(rental.account.depositAmount)} deposit safely held
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col">
-                  {rental && (
-                    <>
-                      <Link
-                        to={`/rental/${rental.publicKey.toBase58()}`}
-                        className="flex items-center gap-1.5 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-all hover:opacity-80"
-                        style={{ color: C.cream, border: `1px solid ${C.border}`, background: 'transparent' }}
-                      >
-                        <IconCamera />
-                        Handover photos
-                      </Link>
-                      {statusKey === 'awaitingConfirmation' && (
-                        <Link
-                          to={`/rental/${rental.publicKey.toBase58()}`}
-                          className="flex items-center gap-1.5 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:opacity-90"
-                          style={{ background: C.primary, color: C.onAccent }}
-                        >
-                          <IconCheck />
-                          Confirm return
-                        </Link>
-                      )}
-                    </>
-                  )}
-                  <Link
-                    to={`/listing/${pubkeyStr}/edit`}
-                    className="whitespace-nowrap rounded-xl px-4 py-2 text-center text-sm font-medium transition-all hover:opacity-80"
-                    style={{ color: C.cream, border: `1px solid ${C.border}`, background: 'transparent' }}
-                  >
-                    Edit
-                  </Link>
-                  {!rental &&
-                    (isConfirmingRemove ? (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleRemove(pubkeyStr)}
-                          disabled={removing === pubkeyStr}
-                          className="whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-                          style={{ background: C.rust, color: C.onAccent }}
-                        >
-                          {removing === pubkeyStr ? 'Removing…' : 'Confirm'}
-                        </button>
-                        <button
-                          onClick={() => setConfirmingRemove(null)}
-                          className="whitespace-nowrap rounded-xl px-3 py-2 text-sm"
-                          style={{ color: C.faint }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmingRemove(pubkeyStr)}
-                        className="whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-all hover:opacity-80"
-                        style={{ color: C.rust, border: '1px solid rgba(184,92,66,0.35)', background: 'transparent' }}
-                      >
-                        Remove
-                      </button>
-                    ))}
-                </div>
-              </div>
-            </div>
+            <ListingCard
+              key={pubkeyStr}
+              listing={l}
+              rental={rental}
+              removing={removing === pubkeyStr}
+              confirmingRemove={confirmingRemove === pubkeyStr}
+              onConfirmRemove={() => setConfirmingRemove(pubkeyStr)}
+              onCancelRemove={() => setConfirmingRemove(null)}
+              onRemove={() => handleRemove(pubkeyStr)}
+            />
           )
         })}
       </div>

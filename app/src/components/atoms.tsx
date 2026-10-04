@@ -1,5 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { C, FONT_HEAD } from '../lib/theme'
+import { IconArrowRight } from './icons'
 
 export function StarRating({ rating }: { rating: number }) {
   return (
@@ -46,6 +48,33 @@ export function Btn({
   )
 }
 
+
+// Reserved for success moments only (a rental confirmed, a listing
+// created) — not a general-purpose button. Pill-shaped, dark outline,
+// message on the left, a green circular action on the right that does the
+// actual navigating (e.g. "View your rentals"). The green here is the same
+// token used everywhere else for confirmed/available states.
+export function SuccessPill({ message, to, actionLabel }: { message: string; to: string; actionLabel: string }) {
+  return (
+    <Link
+      to={to}
+      aria-label={actionLabel}
+      title={actionLabel}
+      className="group flex w-full max-w-md items-center justify-between gap-4 rounded-full py-2 pl-6 pr-2 transition-all hover:shadow-md"
+      style={{ border: `1.5px solid ${C.cream}`, background: C.surface }}
+    >
+      <span className="text-sm font-semibold" style={{ color: C.cream }}>
+        {message}
+      </span>
+      <span
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform group-hover:translate-x-0.5"
+        style={{ background: C.green, color: C.onAccent }}
+      >
+        <IconArrowRight />
+      </span>
+    </Link>
+  )
+}
 
 export function TrustNote() {
   return (

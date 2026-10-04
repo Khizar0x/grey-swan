@@ -13,17 +13,48 @@ interface PhotoManifest {
   photos: string[]
 }
 
-export async function pinFile(blob: Blob, filename: string): Promise<string> {
-  const form = new FormData()
-  form.append('file', blob, filename)
+// XMLHttpRequest rather than fetch() specifically because fetch has no
+// portable way to observe upload progress on the request body — XHR's
+// `upload.onprogress` (bytes actually sent to the server) is what a real
+// percentage bar needs; fetch can only tell you when the whole thing
+// finishes.
+export function pinFile(blob: Blob, filename: string, onProgress?: (loadedBytes: number, totalBytes: number) => void): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData()
+    form.append('file', blob, filename)
 
-  const res = await fetch(PIN_ENDPOINT, { method: 'POST', body: form })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `Upload failed (${res.status}).`)
-  }
-  const { cid } = (await res.json()) as { cid: string }
-  return cid
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', PIN_ENDPOINT)
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) onProgress(e.loaded, e.total)
+      })
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const { cid } = JSON.parse(xhr.responseText) as { cid: string }
+          resolve(cid)
+        } catch {
+          reject(new Error('Upload succeeded but the response was invalid.'))
+        }
+        return
+      }
+      let message = `Upload failed (${xhr.status}).`
+      try {
+        const body = JSON.parse(xhr.responseText) as { error?: string }
+        if (body?.error) message = body.error
+      } catch {
+        // Response wasn't JSON — keep the generic status-based message.
+      }
+      reject(new Error(message))
+    }
+    xhr.onerror = () => reject(new Error('Upload failed. Check your connection and try again.'))
+
+    xhr.send(form)
+  })
 }
 
 // Wraps a set of already-pinned photo CIDs in a manifest and pins that too

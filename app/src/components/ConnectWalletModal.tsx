@@ -62,7 +62,7 @@ export function ConnectWalletModal({ onClose }: { onClose: () => void }) {
               style={{ border: `1px solid ${C.border}`, background: 'transparent' }}
               onMouseEnter={(e) => {
                 ;(e.currentTarget as HTMLButtonElement).style.borderColor = C.gold
-                ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,162,75,0.08)'
+                ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,107,53,0.08)'
               }}
               onMouseLeave={(e) => {
                 ;(e.currentTarget as HTMLButtonElement).style.borderColor = C.border
@@ -99,7 +99,7 @@ export function ConnectWalletModal({ onClose }: { onClose: () => void }) {
                   {wallet.adapter.name}
                 </div>
                 <div className="text-xs" style={{ color: C.faint }}>
-                  Not installed — get it
+                  Not installed. Get it
                 </div>
               </div>
             </a>

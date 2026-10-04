@@ -14,18 +14,26 @@ import App from './App.tsx'
 import './index.css'
 import { AuthProvider } from './lib/AuthContext.tsx'
 import { ProfileProvider } from './lib/ProfileContext.tsx'
+import { SavedAreaProvider } from './lib/SavedAreaContext.tsx'
 import { WalletContextProvider } from './lib/WalletContextProvider.tsx'
+import { WalletModalProvider } from './lib/WalletModalContext.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <WalletContextProvider>
-      <AuthProvider>
-        <ProfileProvider>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        </ProfileProvider>
-      </AuthProvider>
-    </WalletContextProvider>
+    {/* Independent of wallet/auth entirely — a saved area works for anyone
+        browsing, no connection required. */}
+    <SavedAreaProvider>
+      <WalletContextProvider>
+        <AuthProvider>
+          <ProfileProvider>
+            <WalletModalProvider>
+              <BrowserRouter>
+                <App />
+              </BrowserRouter>
+            </WalletModalProvider>
+          </ProfileProvider>
+        </AuthProvider>
+      </WalletContextProvider>
+    </SavedAreaProvider>
   </StrictMode>,
 )

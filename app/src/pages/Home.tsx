@@ -1,14 +1,103 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import heroBg from '../assets/hero.jpeg'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ListingCard } from '../components/ListingCard'
 import { useListings } from '../lib/useListings'
-import { CATEGORIES, type CategoryKey, enumKey } from '../lib/listing'
+import { CATEGORIES, enumKey } from '../lib/listing'
+import { fetchAllListingAreas } from '../lib/listingAreaApi'
+import { geocodeArea, haversineDistanceKm, type GeocodeResult } from '../lib/mapbox'
+import { useSavedArea } from '../lib/SavedAreaContext'
 import { C, FONT_HEAD } from '../lib/theme'
+
+// How far counts as "your area" for the hero pill below — a city-plus-
+// suburbs radius, generous enough that most renters with a saved area see a
+// non-zero count rather than a discouraging "0 nearby" on first visit.
+const NEARBY_RADIUS_KM = 50
+
+// Geocoding the same area string (many listings cluster in a few cities)
+// twice per render would waste Mapbox calls for no reason — this cache
+// lives for the life of the tab, shared across remounts of the page.
+const areaGeocodeCache = new Map<string, Promise<GeocodeResult | null>>()
+function geocodeAreaCached(area: string): Promise<GeocodeResult | null> {
+  let pending = areaGeocodeCache.get(area)
+  if (!pending) {
+    pending = geocodeArea(area)
+    areaGeocodeCache.set(area, pending)
+  }
+  return pending
+}
+
+// Real distance-to-renter for every listing with an owner-set general area —
+// powers the "available in your area" pill so its count and its filter
+// toggle both reflect the same numbers, not a decorative placeholder.
+function useNearbyDistances(renterArea: string | null) {
+  const [distances, setDistances] = useState<Record<string, number> | null>(null)
+  const [loading, setLoading] = useState(false)
+  const listingAreasRef = useRef<Record<string, string> | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchAllListingAreas()
+      .then((areas) => {
+        if (cancelled) return
+        listingAreasRef.current = areas
+        if (renterArea) void recompute(renterArea)
+      })
+      .catch(() => {
+        if (!cancelled) listingAreasRef.current = {}
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function recompute(area: string) {
+    const listingAreas = listingAreasRef.current
+    if (!listingAreas) return
+    setLoading(true)
+    try {
+      const renterGeo = await geocodeAreaCached(area)
+      if (!renterGeo) {
+        setDistances({})
+        return
+      }
+      const entries = Object.entries(listingAreas)
+      const resolved = await Promise.all(
+        entries.map(async ([pubkey, listingArea]) => {
+          const listingGeo = await geocodeAreaCached(listingArea)
+          return listingGeo ? ([pubkey, haversineDistanceKm(renterGeo, listingGeo)] as const) : null
+        }),
+      )
+      const next: Record<string, number> = {}
+      for (const entry of resolved) {
+        if (entry) next[entry[0]] = entry[1]
+      }
+      setDistances(next)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!renterArea) {
+      setDistances(null)
+      return
+    }
+    void recompute(renterArea)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renterArea])
+
+  return { distances, loading }
+}
 
 export function Home() {
   const { listings, loading, error } = useListings()
-  const [activeCategory, setActiveCategory] = useState<CategoryKey | 'all'>('all')
+  const [searchParams] = useSearchParams()
+  const categoryKey = searchParams.get('category')
+  const query = (searchParams.get('q') ?? '').trim().toLowerCase()
+  const { area: renterArea, openPrompt: openAreaPrompt } = useSavedArea()
+  const { distances, loading: distancesLoading } = useNearbyDistances(renterArea)
+  const [nearbyOnly, setNearbyOnly] = useState(false)
 
   // Explore rentals is for things you can actually rent right now — a
   // listing currently out on rent (is_available false on-chain, flipped by
@@ -16,120 +105,79 @@ export function Home() {
   // up here just because .all() returns every Listing account regardless
   // of status.
   const available = listings.filter((l) => l.account.isAvailable)
+  const nearbyCount = distances
+    ? available.filter((l) => {
+        const d = distances[l.publicKey.toBase58()]
+        return d !== undefined && d <= NEARBY_RADIUS_KM
+      }).length
+    : 0
+  const byCategory = categoryKey ? available.filter((l) => enumKey(l.account.category) === categoryKey) : available
+  const byQuery = query ? byCategory.filter((l) => l.account.itemName.toLowerCase().includes(query)) : byCategory
   const filtered =
-    activeCategory === 'all' ? available : available.filter((l) => enumKey(l.account.category) === activeCategory)
+    nearbyOnly && distances
+      ? byQuery.filter((l) => {
+          const d = distances[l.publicKey.toBase58()]
+          return d !== undefined && d <= NEARBY_RADIUS_KM
+        })
+      : byQuery
+
+  const activeCategory = CATEGORIES.find((c) => c.key === categoryKey)
+  const heading = query
+    ? `Results for "${searchParams.get('q')}"`
+    : activeCategory
+      ? activeCategory.label
+      : 'Everything available now'
 
   return (
     <div>
-      {/* Hero — pulled up so the image sits behind the transparent nav */}
-      <div
-        className="relative overflow-hidden"
-        style={{
-          marginTop: '-64px',
-          backgroundImage: `url(${heroBg})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center 28%',
-        }}
-      >
-        <div
-          className="pointer-events-none absolute bottom-0 left-0 right-0 h-32"
-          style={{ background: 'linear-gradient(to bottom, transparent, rgba(250,247,242,0.85))' }}
-        />
-
-        <div className="relative mx-auto max-w-7xl px-4 sm:px-6" style={{ paddingTop: 'calc(64px + 6rem)', paddingBottom: '6rem' }}>
-          <div className="relative max-w-2xl">
-            <div
-              className="pointer-events-none absolute"
-              style={{
-                inset: '-3rem -4rem -4rem -3rem',
-                background: 'radial-gradient(ellipse at 30% 60%, rgba(8,14,24,0.52) 0%, rgba(8,14,24,0.28) 55%, transparent 80%)',
-                filter: 'blur(8px)',
-                zIndex: 0,
-              }}
-            />
-
-            <div className="relative" style={{ zIndex: 1 }}>
-              <div
-                className="mb-7 inline-flex items-center gap-2 rounded-full px-3 py-1.5"
-                style={{ border: '1px solid rgba(255,255,255,0.30)', background: 'rgba(255,255,255,0.10)', backdropFilter: 'blur(10px)' }}
-              >
-                <div className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: '#fff' }} />
-                <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.93)' }}>
-                  Available in your area
-                </span>
-              </div>
-
-              <h1
-                className="mb-5 text-4xl font-bold leading-tight md:text-5xl lg:text-6xl"
-                style={{ fontFamily: FONT_HEAD, color: '#FFFFFF', textShadow: '0 1px 12px rgba(0,0,0,0.20)' }}
-              >
-                Rent what you need.
-                <br />
-                Earn from what you own.
-              </h1>
-
-              <p className="mb-8 max-w-xl text-lg leading-relaxed md:text-xl" style={{ color: 'rgba(255,255,255,0.76)' }}>
-                Grey Swan brings people together to rent useful things simply, safely, and on clear terms.
-              </p>
-
-              <div className="mb-10 flex flex-wrap gap-3">
-                <a
-                  href="#listings"
-                  className="rounded-xl px-6 py-3 text-base font-semibold transition-all hover:opacity-90 active:scale-95"
-                  style={{ background: '#16191E', color: '#FFFFFF', boxShadow: '0 2px 14px rgba(0,0,0,0.32)' }}
-                >
-                  Explore rentals
-                </a>
-                <Link
-                  to="/list-item"
-                  className="rounded-xl px-6 py-3 text-base font-semibold transition-all active:scale-95"
-                  style={{ color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.42)', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(10px)' }}
-                >
-                  List something
-                </Link>
-              </div>
-
-              <div className="pt-7" style={{ borderTop: '1px solid rgba(255,255,255,0.18)' }}>
-                <p className="mb-1 text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.90)' }}>
-                  A better way to rent between people.
-                </p>
-                <p className="text-sm" style={{ color: 'rgba(255,255,255,0.58)' }}>
-                  Clear terms. Protected payments. More control for everyone involved.
-                </p>
-              </div>
-            </div>
-          </div>
+      {/* Slim bold strip — brand presence without pushing listings below the fold */}
+      <div className="px-4 py-3 sm:px-6" style={{ background: C.trust }}>
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-semibold" style={{ color: C.onAccent }}>
+            Deposits held safely · Photos at every handover · Real people, real items
+          </span>
         </div>
       </div>
 
-      {/* Listings */}
-      <div id="listings" className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-        <div className="mb-8 flex items-center gap-2 overflow-x-auto pb-2">
-          <button
-            onClick={() => setActiveCategory('all')}
-            className="whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all"
-            style={
-              activeCategory === 'all'
-                ? { background: 'rgba(201,162,75,0.14)', color: C.gold, border: '1px solid rgba(201,162,75,0.4)' }
-                : { background: 'rgba(38,34,32,0.04)', color: C.muted, border: `1px solid ${C.border}` }
-            }
-          >
-            All
-          </button>
-          {CATEGORIES.map((cat) => (
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        <div className="mb-4">
+          {!renterArea ? (
             <button
-              key={cat.key}
-              onClick={() => setActiveCategory(cat.key)}
-              className="whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all"
+              type="button"
+              onClick={openAreaPrompt}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-90"
+              style={{ background: C.surface2, color: C.muted, border: `1px solid ${C.border}` }}
+            >
+              Set your area to see what's available nearby
+            </button>
+          ) : distances === null && distancesLoading ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold" style={{ background: C.surface2, color: C.faint }}>
+              Checking what's available near {renterArea}…
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setNearbyOnly((v) => !v)}
+              disabled={nearbyCount === 0}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-default"
               style={
-                activeCategory === cat.key
-                  ? { background: 'rgba(201,162,75,0.14)', color: C.gold, border: '1px solid rgba(201,162,75,0.4)' }
-                  : { background: 'rgba(38,34,32,0.04)', color: C.muted, border: `1px solid ${C.border}` }
+                nearbyOnly
+                  ? { background: C.primary, color: C.onAccent }
+                  : { background: C.accentSoft, color: C.rust, border: `1px solid ${C.border}` }
               }
             >
-              {cat.label}
+              {nearbyOnly ? `Showing ${nearbyCount} near ${renterArea} · Show all` : `${nearbyCount} available in your area (${renterArea})`}
             </button>
-          ))}
+          )}
+        </div>
+
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <h1 className="text-xl font-bold sm:text-2xl" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+            {heading}
+          </h1>
+          <span className="text-sm" style={{ color: C.faint }}>
+            {filtered.length} available
+          </span>
         </div>
 
         {loading && (
@@ -146,11 +194,11 @@ export function Home() {
 
         {!loading && !error && filtered.length === 0 && (
           <p className="py-12 text-center text-sm" style={{ color: C.faint }}>
-            No items listed yet.
+            No items match yet. Try a different category or search.
           </p>
         )}
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4">
           {filtered.map((l) => (
             <ListingCard
               key={l.publicKey.toBase58()}
@@ -169,7 +217,7 @@ export function Home() {
         </div>
       </div>
 
-      <div style={{ borderTop: `1px solid ${C.border}`, marginTop: '4rem' }}>
+      <div style={{ borderTop: `1px solid ${C.border}`, marginTop: '3rem' }}>
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-8 sm:px-6 md:flex-row">
           <span className="text-sm" style={{ color: C.faint }}>
             © 2026 Grey Swan Ltd. All rights reserved.

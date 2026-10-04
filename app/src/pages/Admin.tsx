@@ -39,7 +39,7 @@ function disputePathLabel(kind: Record<string, object>): string {
 // with the same three-tint badge system so it looks native to the app.
 const REVIEW_STYLE: Record<DisputeReviewStatus, { background: string; color: string; border: string }> = {
   under_review: { background: 'rgba(201,162,62,0.10)', color: '#B5893A', border: '1px solid rgba(201,162,62,0.22)' },
-  resolved: { background: 'rgba(62,138,95,0.10)', color: C.green, border: '1px solid rgba(62,138,95,0.22)' },
+  resolved: { background: 'rgba(22,163,74,0.10)', color: C.green, border: '1px solid rgba(22,163,74,0.22)' },
 }
 const REVIEW_LABEL: Record<DisputeReviewStatus, string> = {
   under_review: 'Under review',
@@ -276,10 +276,10 @@ function DisputeCard({
   const frozen = acc.totalRentalCost.add(acc.depositAmount)
 
   const phases: [string, string][] = [
-    ['Phase 1 — before sending', acc.phase1Photos],
-    ['Phase 2 — on arrival', acc.phase2Photos],
-    ['Phase 3 — before returning', acc.phase3Photos],
-    ['Phase 4 — on return', acc.phase4Photos],
+    ['Phase 1: before sending', acc.phase1Photos],
+    ['Phase 2: on arrival', acc.phase2Photos],
+    ['Phase 3: before returning', acc.phase3Photos],
+    ['Phase 4: on return', acc.phase4Photos],
   ]
 
   // Already resolved from a *previous* session (off-chain status loaded as
@@ -334,7 +334,7 @@ function DisputeCard({
           setPayoutWarning(
             `Funds were sent to the ${selectedRecipient}, but saving the review note failed: ${
               err instanceof Error ? err.message : String(err)
-            } The payout is final and on-chain — only this note/status record didn't save.`,
+            } The payout is final. Only this note didn't save.`,
           )
         }
       } else {
@@ -351,10 +351,10 @@ function DisputeCard({
   return (
     <div className="rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
       <div className="mb-3 flex items-start justify-between gap-2">
-        <h3 className="text-base font-semibold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+        <h3 className="text-base font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
           {itemName}
         </h3>
-        <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium" style={REVIEW_STYLE[status]}>
+        <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold" style={REVIEW_STYLE[status]}>
           {REVIEW_LABEL[status]}
         </span>
       </div>
@@ -382,7 +382,7 @@ function DisputeCard({
           <span className="block uppercase tracking-wide" style={{ color: C.faint }}>
             Frozen amount
           </span>
-          <span style={{ color: C.muted }}>{formatSol(frozen)}</span>
+          <span className="font-bold" style={{ color: C.cream }}>{formatSol(frozen)}</span>
         </div>
       </div>
 
@@ -501,9 +501,9 @@ function PayoutButton({
   onClick: () => void
 }) {
   const style = paid
-    ? { background: 'rgba(62,138,95,0.10)', border: '1px solid rgba(62,138,95,0.4)', color: C.green }
+    ? { background: 'rgba(22,163,74,0.10)', border: '1px solid rgba(22,163,74,0.4)', color: C.green }
     : selected
-      ? { background: 'rgba(201,162,75,0.14)', border: `1px solid ${C.gold}`, color: C.gold }
+      ? { background: 'rgba(255,107,53,0.14)', border: `1px solid ${C.gold}`, color: C.gold }
       : { background: 'transparent', border: `1px solid ${C.border}`, color: C.cream }
   return (
     <button
@@ -518,7 +518,7 @@ function PayoutButton({
       </span>
       {truncate(address)}
       {paid && (
-        <span className="mt-1 block text-xs font-semibold" style={{ color: C.green }}>
+        <span className="mt-1 block text-xs font-bold" style={{ color: C.green }}>
           Paid
         </span>
       )}

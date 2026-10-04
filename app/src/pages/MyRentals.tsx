@@ -1,11 +1,86 @@
 import { useWallet } from '@solana/wallet-adapter-react'
 import { Link } from 'react-router-dom'
-import { IconEye } from '../components/icons'
+import { IconCamera, IconEye } from '../components/icons'
+import { RetryImage } from '../components/RetryImage'
 import { formatSol } from '../lib/format'
+import { categoryColor, categoryLabel } from '../lib/listing'
 import { rentalStatusLabel, rentalStatusStyle } from '../lib/rentalStatus'
 import { C, FONT_HEAD } from '../lib/theme'
+import type { ListingAccountEntry } from '../lib/useListings'
 import { useListingsByKeys } from '../lib/useListingsByKeys'
+import { usePhotoUrls } from '../lib/usePhotoUrls'
+import type { RentalAccountEntry } from '../lib/useRentals'
 import { useRentals } from '../lib/useRentals'
+
+function PhotoPlaceholder({ loading }: { loading?: boolean }) {
+  return (
+    <div className={`flex aspect-square items-center justify-center ${loading ? 'animate-pulse' : ''}`} style={{ background: C.surface2 }}>
+      <div style={{ color: C.faint }}>
+        <IconCamera />
+      </div>
+    </div>
+  )
+}
+
+// Same card language as ListingCard.tsx (homepage) and MyListings.tsx — a
+// rental is still "an item in the marketplace," just one already in hand.
+function RentalCard({ rental, listing }: { rental: RentalAccountEntry; listing: ListingAccountEntry['account'] | undefined }) {
+  const { urls, loading: photosLoading } = usePhotoUrls(listing?.photos)
+  const style = rentalStatusStyle(rental.account.status)
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl transition-all hover:shadow-md" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+      <Link to={`/rental/${rental.publicKey.toBase58()}`} className="relative block">
+        {urls[0] ? (
+          <div className="aspect-square overflow-hidden" style={{ background: C.surface2 }}>
+            <RetryImage src={urls[0]} alt={listing?.itemName ?? 'Item'} className="h-full w-full object-cover" />
+          </div>
+        ) : (
+          <PhotoPlaceholder loading={photosLoading} />
+        )}
+        {listing && (
+          <span
+            className="absolute left-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+            style={{ background: categoryColor(listing.category), color: '#FFFFFF' }}
+          >
+            {categoryLabel(listing.category)}
+          </span>
+        )}
+      </Link>
+
+      <div className="flex flex-1 flex-col gap-2 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <Link to={`/rental/${rental.publicKey.toBase58()}`} className="min-w-0">
+            <h3 className="truncate text-sm font-bold leading-snug" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+              {listing?.itemName ?? 'Item'}
+            </h3>
+          </Link>
+          <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold" style={style}>
+            {rentalStatusLabel(rental.account.status)}
+          </span>
+        </div>
+
+        <p className="text-sm font-bold" style={{ color: C.cream }}>
+          {rental.account.weeks} week{rental.account.weeks === 1 ? '' : 's'}
+        </p>
+        <p className="text-xs font-semibold" style={{ color: C.trust }}>
+          {formatSol(rental.account.depositAmount)} deposit safely held
+        </p>
+
+        <div className="mt-auto pt-1.5">
+          <Link
+            to={`/rental/${rental.publicKey.toBase58()}`}
+            className="flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold transition-all hover:opacity-80"
+            style={{ color: C.cream, border: `1px solid ${C.border}`, background: 'transparent' }}
+          >
+            <IconEye />
+            View rental
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function MyRentals() {
   const { publicKey } = useWallet()
@@ -15,7 +90,7 @@ export function MyRentals() {
   const listingsMap = useListingsByKeys(mine.map((r) => r.account.listing))
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
       <h1 className="mb-2 text-3xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
         Your rentals
       </h1>
@@ -44,41 +119,10 @@ export function MyRentals() {
         </p>
       )}
 
-      <div className="flex flex-col gap-4">
-        {mine.map((r) => {
-          const listing = listingsMap.get(r.account.listing.toBase58())
-          const style = rentalStatusStyle(r.account.status)
-          return (
-            <div key={r.publicKey.toBase58()} className="overflow-hidden rounded-2xl" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-              <div className="p-5">
-                <div className="mb-2 flex items-start justify-between gap-2">
-                  <h3 className="text-base font-semibold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-                    {listing?.itemName ?? 'Item'}
-                  </h3>
-                  <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium" style={style}>
-                    {rentalStatusLabel(r.account.status)}
-                  </span>
-                </div>
-                <p className="mb-1 text-sm" style={{ color: C.muted }}>
-                  {r.account.weeks} week{r.account.weeks === 1 ? '' : 's'}
-                </p>
-                <p className="text-xs" style={{ color: C.faint }}>
-                  {formatSol(r.account.depositAmount)} deposit safely held
-                </p>
-              </div>
-              <div className="px-5 pb-5">
-                <Link
-                  to={`/rental/${r.publicKey.toBase58()}`}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-all hover:opacity-80"
-                  style={{ color: C.cream, border: `1px solid ${C.border}`, background: 'transparent' }}
-                >
-                  <IconEye />
-                  View rental
-                </Link>
-              </div>
-            </div>
-          )
-        })}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {mine.map((r) => (
+          <RentalCard key={r.publicKey.toBase58()} rental={r} listing={listingsMap.get(r.account.listing.toBase58())} />
+        ))}
       </div>
     </div>
   )

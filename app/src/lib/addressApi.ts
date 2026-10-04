@@ -8,6 +8,17 @@ export async function fetchAddress(rentalPubkey: string, role: AddressRole, toke
   return address
 }
 
+// A renter's most recently saved delivery address, independent of any one
+// rental — used to pre-fill the address form for a repeat renter instead of
+// asking them to retype it every time.
+export async function fetchLatestRenterAddress(renterPubkey: string, token: string): Promise<string | null> {
+  const res = await fetch(`/api/address/latest/${renterPubkey}`, { headers: { Authorization: `Bearer ${token}` } })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error('Could not load your saved address.')
+  const { address } = (await res.json()) as { address: string }
+  return address
+}
+
 export async function saveAddress(
   rentalPubkey: string,
   role: AddressRole,
