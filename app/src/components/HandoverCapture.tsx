@@ -189,7 +189,7 @@ export function HandoverCapture({
                   {activeSpec.hint}
                 </p>
               </div>
-              <CameraCapture key={activeSpec.id} onCapture={handleCapture(activeSpec.id)} />
+              <CameraCapture onCapture={handleCapture(activeSpec.id)} />
               {!activeSpec.required && (
                 <button type="button" className="self-start text-xs underline" style={{ color: C.faint }} onClick={() => setActive(nextMissing(shots, activeSpec.id))}>
                   Skip this one
