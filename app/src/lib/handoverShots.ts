@@ -35,7 +35,7 @@ const PARCEL_UNOPENED: ShotSpec = {
 }
 
 export function shotLabel(id: string): string {
-  return [...ITEM_SHOTS, PARCEL_PACKED, PARCEL_UNOPENED].find((s) => s.id === id)?.label ?? id
+  return [...ITEM_SHOTS, PARCEL_PACKED, PARCEL_UNOPENED, ...MISSING_ITEM_SHOTS].find((s) => s.id === id)?.label ?? id
 }
 
 // Phases 1 and 3 end with the packed parcel; phases 2 and 4 start with the
@@ -44,3 +44,9 @@ export function shotsForPhase(phase: 1 | 2 | 3 | 4, hasParcel: boolean): ShotSpe
   if (!hasParcel) return ITEM_SHOTS
   return phase === 1 || phase === 3 ? [...ITEM_SHOTS, PARCEL_PACKED] : [PARCEL_UNOPENED, ...ITEM_SHOTS]
 }
+
+// Used when a renter reports that the item never arrived: there is nothing to
+// photograph except where it should have been left.
+export const MISSING_ITEM_SHOTS: ShotSpec[] = [
+  { id: 'delivery_spot', label: 'Where it should have arrived', hint: 'Your door, porch or delivery spot, with your paper code beside it.', required: true, showsCode: true },
+]

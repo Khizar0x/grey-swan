@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchPhaseCode } from '../lib/phaseCodeApi'
 import { type CaptureSource, type ManifestShot, pinFile, pinHandoverManifest } from '../lib/ipfs'
-import { shotsForPhase } from '../lib/handoverShots'
+import { MISSING_ITEM_SHOTS, shotsForPhase } from '../lib/handoverShots'
 import { C, FONT_HEAD } from '../lib/theme'
 import { Btn } from './atoms'
 import { CameraCapture } from './CameraCapture'
@@ -21,16 +21,19 @@ export function HandoverCapture({
   rentalPubkey,
   phase,
   hasParcel,
+  variant,
   token,
   onChange,
 }: {
   rentalPubkey: string
   phase: 1 | 2 | 3 | 4
   hasParcel: boolean
+  // 'missing': the item never arrived, so the one photo is the delivery spot.
+  variant?: 'missing'
   token: string
   onChange: (manifestCid: string) => void
 }) {
-  const specs = useMemo(() => shotsForPhase(phase, hasParcel), [phase, hasParcel])
+  const specs = useMemo(() => (variant === 'missing' ? MISSING_ITEM_SHOTS : shotsForPhase(phase, hasParcel)), [phase, hasParcel, variant])
   const [code, setCode] = useState<string | null>(null)
   const [codeError, setCodeError] = useState<string | null>(null)
   const [codeAttempt, setCodeAttempt] = useState(0)

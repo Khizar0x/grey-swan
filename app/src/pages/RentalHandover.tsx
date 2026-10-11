@@ -5,18 +5,33 @@ import { Link, useParams } from 'react-router-dom'
 import { Btn, TrustNote } from '../components/atoms'
 import { IconAlert, IconCheck } from '../components/icons'
 import { MessagesEntryRow } from '../components/MessagesEntryRow'
+import { DeadlinePanel } from '../components/DeadlinePanel'
 import { HandoverCapture } from '../components/HandoverCapture'
 import { RetryImage } from '../components/RetryImage'
 import { fetchAddress, saveAddress } from '../lib/addressApi'
 import { useAuthContext } from '../lib/AuthContext'
+import { availableActions, relevantDeadlines, type TimelineData, type TimeoutActionKey, toTimelineData } from '../lib/deadlines'
 import { type DeliveryMethod, fetchDeliveryMethod } from '../lib/deliveryApi'
 import { formatSol } from '../lib/format'
 import { shotLabel } from '../lib/handoverShots'
 import { enumKey } from '../lib/listing'
-import { confirmReturn, flagReturnIssue, rejectOnArrival, submitPhase1, submitPhase2, submitPhase3, submitPhase4 } from '../lib/mutations'
+import {
+  completeAfterInspectionDeadline,
+  confirmArrivalAfterDeadline,
+  confirmReturn,
+  flagNotReturned,
+  flagReturnIssue,
+  flagReturnNotReceived,
+  rejectOnArrival,
+  submitPhase1,
+  submitPhase2,
+  submitPhase3,
+  submitPhase4,
+} from '../lib/mutations'
 import { useProgram } from '../lib/program'
 import { phaseStepIndex, rentalStatusLabel } from '../lib/rentalStatus'
 import { C, FONT_HEAD, INPUT_STYLE } from '../lib/theme'
+import { useNow } from '../lib/useNow'
 import { usePhotoUrls } from '../lib/usePhotoUrls'
 import type { RentalAccountEntry } from '../lib/useRentals'
 import { withTimeout } from '../lib/withTimeout'
@@ -35,6 +50,11 @@ export function RentalHandover() {
   const { token, signedIn, signingIn, error: authError, signIn } = useAuthContext()
 
   const [rental, setRental] = useState<RentalAccountEntry['account'] | null>(null)
+  // The rental's dates (arrival window, return date and so on). null for a
+  // rental from before timelines existed, or if it couldn't be read: either
+  // way the deadline panel shows nothing.
+  const [timeline, setTimeline] = useState<TimelineData | null>(null)
+  const now = useNow()
   const [loading, setLoading] = useState(true)
   // Item name for the completed-rental record — the rental account only
   // stores the listing's pubkey, not its name.
@@ -46,6 +66,9 @@ export function RentalHandover() {
   const [returnAddress, setReturnAddress] = useState('')
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [showRejectForm, setShowRejectForm] = useState(false)
+  // 'missing' is the renter saying the item never arrived: same program call
+  // as a rejection, but the photo is of the delivery spot, not the item.
+  const [rejectMode, setRejectMode] = useState<'broken' | 'missing'>('broken')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Surfaced when the on-chain step succeeds but a follow-up off-chain save
@@ -88,7 +111,13 @@ export function RentalHandover() {
   // fresh" apart from "couldn't confirm, don't trust what's on screen".
   const fetchRental = useCallback(async () => {
     if (!pubkey) return
-    const account = await program.account.rental.fetch(new PublicKey(pubkey))
+    const rentalKey = new PublicKey(pubkey)
+    const account = await program.account.rental.fetch(rentalKey)
+    // The timeline is optional extra information: failing to read it must
+    // not stop the rental itself from loading, it just hides the deadlines.
+    const [timelinePda] = PublicKey.findProgramAddressSync([Buffer.from('timeline'), rentalKey.toBuffer()], program.programId)
+    const timelineAccount = await program.account.rentalTimeline.fetchNullable(timelinePda).catch(() => null)
+    setTimeline(timelineAccount ? toTimelineData(timelineAccount) : null)
     setRental(account)
   }, [program, pubkey])
 
@@ -292,6 +321,7 @@ export function RentalHandover() {
       setReturnAddress('')
       setShowDisputeForm(false)
       setShowRejectForm(false)
+      setRejectMode('broken')
       // Wait for the confirmed on-chain state before this function returns
       // (and busy clears) — re-enabling the UI on a fire-and-forget refetch
       // that might still be stale (or might silently fail) is exactly how
@@ -312,9 +342,9 @@ export function RentalHandover() {
 
   // Guided camera step for one phase. Waits for the delivery method because
   // it decides whether a parcel shot is part of the list.
-  const renderCapture = (phase: 1 | 2 | 3 | 4, key: string) =>
+  const renderCapture = (phase: 1 | 2 | 3 | 4, key: string, variant?: 'missing') =>
     token && deliveryMethod ? (
-      <HandoverCapture key={key} rentalPubkey={pubkey} phase={phase} hasParcel={deliveryMethod !== 'pickup'} token={token} onChange={setPhotos} />
+      <HandoverCapture key={key} rentalPubkey={pubkey} phase={phase} hasParcel={deliveryMethod !== 'pickup'} variant={variant} token={token} onChange={setPhotos} />
     ) : (
       <WaitingNote text="Loading…" />
     )
@@ -396,6 +426,31 @@ export function RentalHandover() {
     )
   }
 
+  const role = isOwner ? 'owner' : isRenter ? 'renter' : null
+  const phasesDone = phaseStepIndex(rental.currentPhase)
+  const isActive = statusKey === 'active'
+  const deadlines = relevantDeadlines(isActive, phasesDone, timeline, role)
+  const timeoutActions = availableActions(isActive, phasesDone, timeline, role, now)
+
+  const runTimeoutAction = (action: TimeoutActionKey) => {
+    switch (action) {
+      case 'notArrived':
+        // Same screen and same program call as reporting a problem on arrival.
+        setRejectMode('missing')
+        setReason('')
+        setShowRejectForm(true)
+        return
+      case 'markReceived':
+        return void runMutation(() => confirmArrivalAfterDeadline(program, rentalPubkey, rental.owner))
+      case 'itemNotReturned':
+        return void runMutation(() => flagNotReturned(program, rentalPubkey, rental.owner))
+      case 'returnNeverArrived':
+        return void runMutation(() => flagReturnNotReceived(program, rentalPubkey, rental.owner))
+      case 'completeRental':
+        return void runMutation(() => completeAfterInspectionDeadline(program, rental.listing, rentalPubkey, rental.owner, rental.renter))
+    }
+  }
+
   const stepLabels = ['Send item', 'Renter receives', 'Return item', 'Owner checks']
 
   return (
@@ -425,6 +480,8 @@ export function RentalHandover() {
           <span key={l}>{l}</span>
         ))}
       </div>
+
+      <DeadlinePanel deadlines={deadlines} actions={timeoutActions} now={now} busy={busy} onAction={runTimeoutAction} />
 
       <div className="rounded-2xl p-8" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
         {error && (
@@ -518,15 +575,15 @@ export function RentalHandover() {
             {isRenter ? (
               showRejectForm ? (
                 <>
-                  {renderCapture(2, 'p2-reject')}
+                  {renderCapture(2, rejectMode === 'missing' ? 'p2-missing' : 'p2-reject', rejectMode === 'missing' ? 'missing' : undefined)}
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>What's wrong?</label>
+                    <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>{rejectMode === 'missing' ? 'Tell us what happened' : "What's wrong?"}</label>
                     <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} style={{ ...INPUT_STYLE, resize: 'none' }} />
                   </div>
                   <Btn variant="danger" full disabled={busy || !photos || !reason} onClick={() => runMutation(() => rejectOnArrival(program, rentalPubkey, rental.renter, photos, reason))}>
-                    {busy ? 'Submitting…' : 'Report a problem'}
+                    {busy ? 'Submitting…' : rejectMode === 'missing' ? "Report that it hasn't arrived" : 'Report a problem'}
                   </Btn>
-                  <button onClick={() => setShowRejectForm(false)} className="text-xs underline" style={{ color: C.faint }}>Cancel</button>
+                  <button onClick={() => { setShowRejectForm(false); setRejectMode('broken') }} className="text-xs underline" style={{ color: C.faint }}>Cancel</button>
                 </>
               ) : (
                 <>
@@ -539,7 +596,7 @@ export function RentalHandover() {
                     </Btn>
                   </div>
                   <TrustNote />
-                  <button onClick={() => setShowRejectForm(true)} className="flex items-center gap-1.5 text-xs underline" style={{ color: C.rust }}>
+                  <button onClick={() => { setRejectMode('broken'); setShowRejectForm(true) }} className="flex items-center gap-1.5 text-xs underline" style={{ color: C.rust }}>
                     <IconAlert /> Item arrived wrong or broken
                   </button>
                 </>
