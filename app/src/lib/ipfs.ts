@@ -9,8 +9,32 @@ export function gatewayUrl(cid: string): string {
   return `${GATEWAY}${cid}`
 }
 
+// How a handover photo got into the manifest. "captured" means it came from
+// the in-app camera stream; "uploaded" is the labelled fallback used only
+// when no camera could be started. Neither is cryptographic proof, it is
+// what the app itself observed.
+export type CaptureSource = 'captured' | 'uploaded'
+
+export interface ManifestShot {
+  shot: string
+  capture: CaptureSource
+}
+
+// `photos` stays a plain list of CIDs so older readers keep working. The
+// remaining fields are optional and only present on handover manifests made
+// by the guided camera flow: `shots[i]` describes `photos[i]`.
 interface PhotoManifest {
   photos: string[]
+  shots?: ManifestShot[]
+  phaseCode?: string
+}
+
+export interface ManifestDetail {
+  photos: string[]
+  // Same length as `photos`; an entry is undefined for photos without shot
+  // info (old manifests, listing photos).
+  shots: (ManifestShot | undefined)[]
+  phaseCode: string | null
 }
 
 // XMLHttpRequest rather than fetch() specifically because fetch has no
@@ -69,6 +93,14 @@ export async function pinManifest(photoCids: string[]): Promise<string> {
   return pinFile(manifestBlob, 'manifest.json')
 }
 
+// Handover manifest: same CID list as pinManifest, plus what each photo shows,
+// how it was taken and the server-issued phase code.
+export async function pinHandoverManifest(photoCids: string[], shots: ManifestShot[], phaseCode: string): Promise<string> {
+  const manifest: PhotoManifest = { photos: photoCids, shots, phaseCode }
+  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' })
+  return pinFile(manifestBlob, 'manifest.json')
+}
+
 // Uploads each photo individually, then pins the manifest referencing them.
 // Returns the manifest's CID, which is what goes into the Anchor
 // instruction argument.
@@ -98,8 +130,27 @@ async function fetchWithRetry(url: string, attempts = 5, delayMs = 1500): Promis
   throw lastError instanceof Error ? lastError : new Error('Could not load photos.')
 }
 
-export async function resolveManifest(cid: string): Promise<string[]> {
+function parseShot(value: unknown): ManifestShot | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const { shot, capture } = value as Partial<ManifestShot>
+  if (typeof shot !== 'string') return undefined
+  return { shot, capture: capture === 'uploaded' ? 'uploaded' : 'captured' }
+}
+
+// Tolerant of every manifest shape ever pinned: the original `{ photos }`
+// and the handover form with shots and a phase code.
+export async function resolveManifestDetail(cid: string): Promise<ManifestDetail> {
   const res = await fetchWithRetry(gatewayUrl(cid))
-  const manifest = (await res.json()) as PhotoManifest
-  return manifest.photos
+  const manifest = (await res.json()) as Partial<PhotoManifest>
+  const photos = Array.isArray(manifest.photos) ? manifest.photos : []
+  const rawShots: unknown[] = Array.isArray(manifest.shots) ? manifest.shots : []
+  return {
+    photos,
+    shots: photos.map((_, i) => parseShot(rawShots[i])),
+    phaseCode: typeof manifest.phaseCode === 'string' ? manifest.phaseCode : null,
+  }
+}
+
+export async function resolveManifest(cid: string): Promise<string[]> {
+  return (await resolveManifestDetail(cid)).photos
 }

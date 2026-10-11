@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { gatewayUrl, resolveManifest } from './ipfs'
+import { gatewayUrl, type ManifestShot, resolveManifestDetail } from './ipfs'
 
 export function usePhotoUrls(manifestCid: string | undefined) {
   const [urls, setUrls] = useState<string[]>([])
+  // Only filled for handover manifests from the guided camera flow.
+  const [shots, setShots] = useState<(ManifestShot | undefined)[]>([])
+  const [phaseCode, setPhaseCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   // resolveManifest's own retry budget (lib/ipfs.ts) is bounded — measured
   // gateway latency runs 3-7s per request even for old, already-propagated
@@ -16,6 +19,8 @@ export function usePhotoUrls(manifestCid: string | undefined) {
   useEffect(() => {
     if (!manifestCid) {
       setUrls([])
+      setShots([])
+      setPhaseCode(null)
       setError(false)
       return
     }
@@ -23,13 +28,18 @@ export function usePhotoUrls(manifestCid: string | undefined) {
     let cancelled = false
     setLoading(true)
     setError(false)
-    resolveManifest(manifestCid)
-      .then((cids) => {
-        if (!cancelled) setUrls(cids.map(gatewayUrl))
+    resolveManifestDetail(manifestCid)
+      .then((detail) => {
+        if (cancelled) return
+        setUrls(detail.photos.map(gatewayUrl))
+        setShots(detail.shots)
+        setPhaseCode(detail.phaseCode)
       })
       .catch(() => {
         if (!cancelled) {
           setUrls([])
+          setShots([])
+          setPhaseCode(null)
           setError(true)
         }
       })
@@ -44,5 +54,5 @@ export function usePhotoUrls(manifestCid: string | undefined) {
 
   const retry = useCallback(() => setAttempt((a) => a + 1), [])
 
-  return { urls, loading, error, retry }
+  return { urls, shots, phaseCode, loading, error, retry }
 }
