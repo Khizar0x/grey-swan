@@ -90,7 +90,7 @@ export function route(input: RouteInput): Decision {
   if (input.walletRisk) human('wallet dispute history flagged')
   if (input.linkedWallets) human('linked wallets flagged')
 
-  if (reasons.length) return { kind: 'HUMAN_REVIEW', reasons }
+  if (reasons.length) return { kind: 'HUMAN_REVIEW', reasons: [...new Set(reasons)] }
 
   // Damage only counts when the owner claimed it AND the photos support it.
   const ordered = [...findings].sort((a, b) => AREAS.indexOf(a.area) - AREAS.indexOf(b.area))
