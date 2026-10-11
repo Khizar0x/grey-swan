@@ -4,12 +4,14 @@ import 'dotenv/config'
 import express from 'express'
 import type { NextFunction, Request, Response } from 'express'
 import multer from 'multer'
+import { fileURLToPath } from 'node:url'
 import { type AddressRole, getAddress, getLatestRenterAddress, upsertAddress } from './addresses.js'
 import { issueNonceMessage, issueSessionToken, requireAuth, verifySignInSignature } from './auth.js'
 import { getReviewerPubkeys } from './config.js'
 import { getDefaultAddress, upsertDefaultAddress } from './defaultAddress.js'
 import { type DeliveryMethod, getDeliveryMethod, upsertDeliveryMethod } from './delivery.js'
 import { type DisputeReviewStatus, listDisputeNotes, upsertDisputeNote } from './disputes.js'
+import { getIpfsFile, isCid } from './ipfsCache.js'
 import { getAllListingAreas, getListingArea, upsertListingArea } from './listingAreas.js'
 import { countUnread, getLastMessage, insertMessage, listMessages, markReadExceptSender, MESSAGE_MAX_LEN } from './messages.js'
 import { getAnswers, insertAnswers, validateOwnerAnswers, validateRenterAnswers } from './disputeAnswers.js'
@@ -374,6 +376,26 @@ app.post('/api/dispute-answers/:rentalPubkey', requireAuth, requireRentalParty, 
 // Bulk variant for the browse page, which needs every listing's area at
 // once to compute "available in your area" — same public, no-auth read as
 // the single-listing route above, just batched.
+// Public, cached copy of an IPFS file (photo or manifest). Same content the
+// gateway serves to anyone; the cache only keeps the shared gateway from
+// rate-limiting pages that load many photos at once.
+const IPFS_CACHE_DIR = fileURLToPath(new URL('../data/ipfs-cache', import.meta.url))
+app.get('/api/ipfs/:cid', async (req, res) => {
+  const cid = String(req.params.cid)
+  if (!isCid(cid)) {
+    res.status(400).json({ error: 'Not a valid file ID.' })
+    return
+  }
+  try {
+    const file = await getIpfsFile(cid, IPFS_CACHE_DIR)
+    res.set('Content-Type', file.contentType)
+    res.set('Cache-Control', 'public, max-age=31536000, immutable')
+    res.send(Buffer.from(file.bytes))
+  } catch {
+    res.status(502).json({ error: "Couldn't fetch that file right now. Try again shortly." })
+  }
+})
+
 app.get('/api/listing-areas', (_req, res) => {
   const rows = getAllListingAreas()
   res.json({ areas: Object.fromEntries(rows.map((r) => [r.listing_pubkey, r.area])) })

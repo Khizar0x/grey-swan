@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties, type MouseEventHandler, type ReactNode } from 'react'
+import { urlForAttempt } from '../lib/ipfs'
 import { C } from '../lib/theme'
 
 // A freshly-pinned photo can resolve through the gateway at a different
@@ -13,8 +14,8 @@ export function RetryImage({
   className,
   style,
   onClick,
-  maxAttempts = 5,
-  retryDelayMs = 1500,
+  maxAttempts = 8,
+  retryDelayMs = 2500,
   fallback,
 }: {
   src: string
@@ -77,7 +78,7 @@ export function RetryImage({
       // .src to the same value doesn't reliably force the browser to
       // re-request it after a failed load.
       key={attempt}
-      src={src}
+      src={urlForAttempt(src, attempt)}
       alt={alt}
       className={`${className ?? ''} ${!loaded ? 'animate-pulse' : ''}`}
       style={style}

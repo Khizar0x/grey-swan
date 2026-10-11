@@ -9,6 +9,20 @@ export function gatewayUrl(cid: string): string {
   return `${GATEWAY}${cid}`
 }
 
+// The shared public gateway answers "429" when a page asks for many files at
+// once (the review page does). Our server keeps a cached copy of each file it
+// has fetched, so a second attempt goes there instead. Same content, since a
+// CID always names the same bytes.
+export function cachedUrl(cid: string): string {
+  return `/api/ipfs/${cid}`
+}
+
+// Gateway URL on the first try, the cached copy on every retry.
+export function urlForAttempt(url: string, attempt: number): string {
+  if (attempt > 0 && url.startsWith(GATEWAY)) return cachedUrl(url.slice(GATEWAY.length))
+  return url
+}
+
 // How a handover photo got into the manifest. "captured" means it came from
 // the in-app camera stream; "uploaded" is the labelled fallback used only
 // when no camera could be started. Neither is cryptographic proof, it is
@@ -115,11 +129,11 @@ export async function pinPhotos(files: File[]): Promise<string> {
 // API returns. Without a retry, a listing page viewed moments after
 // creation would fetch once, fail, and permanently show the placeholder
 // even though the exact same request would succeed a few seconds later.
-async function fetchWithRetry(url: string, attempts = 5, delayMs = 1500): Promise<Response> {
+async function fetchWithRetry(url: string, attempts = 8, delayMs = 2500): Promise<Response> {
   let lastError: unknown
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      const res = await fetch(url)
+      const res = await fetch(urlForAttempt(url, attempt))
       if (res.ok) return res
       lastError = new Error(`HTTP ${res.status}`)
     } catch (err) {
