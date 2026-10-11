@@ -138,5 +138,8 @@ export function looksLikeInjection(text: string): boolean {
   const squashed = text.replace(/\s+/gu, '')
   const candidates = [text, spaced, ...decodedVariants(text)]
   if (squashed.length < 400) candidates.push(squashed.replace(/([a-z])(?=[A-Z])/gu, '$1 '))
-  return candidates.some((c) => PHRASES.some((re) => re.test(c)))
+  if (candidates.some((c) => PHRASES.some((re) => re.test(c)))) return true
+  // letters-only form defeats "i g n o r e" style spacing
+  const letters = text.toLowerCase().replace(/[^a-z]/gu, '')
+  return /ignore(?:all|the|any)?(?:previous|prior|above|earlier)|disregard(?:all|the|any)?(?:previous|prior|above|rules)|systemprompt/u.test(letters)
 }
