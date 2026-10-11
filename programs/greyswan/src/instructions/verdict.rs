@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_BPS, MAX_VERDICT_TIERS, RUBRIC_TIERS};
-use crate::instructions::confirm_return::bps_of;
-use crate::state::{Config, Dispute, DisputeKind, DisputeStatus, Rental, RentalStatus};
+use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_BPS, MAX_VERDICT_TIERS, PLATFORM_WALLET, RUBRIC_TIERS};
+use crate::instructions::confirm_return::{bps_of, settle_rental};
+use crate::state::{Config, Dispute, DisputeKind, DisputeStatus, Listing, Rental, RentalStatus};
 
 // The damage-dispute engine for ReturnIssue disputes (the owner flagged a
 // problem after getting the item back). An off-chain AI compares the
@@ -174,4 +174,126 @@ pub fn handle_appeal(ctx: Context<Appeal>) -> Result<()> {
     dispute.status = DisputeStatus::Appealed;
 
     Ok(())
+}
+
+// ---------- Paying out the verdict ----------
+
+/// Gives each party back whatever bond they still have held in the
+/// dispute, and records that nothing is held any more.
+pub(crate) fn refund_bonds<'info>(
+    dispute: &mut Account<'info, Dispute>,
+    owner: &AccountInfo<'info>,
+    renter: &AccountInfo<'info>,
+) -> Result<()> {
+    let dispute_info = dispute.to_account_info();
+    for (bond, to) in [(dispute.owner_bond, owner), (dispute.renter_bond, renter)] {
+        if bond > 0 {
+            **dispute_info.try_borrow_mut_lamports()? -= bond;
+            **to.try_borrow_mut_lamports()? += bond;
+        }
+    }
+    dispute.owner_bond = 0;
+    dispute.renter_bond = 0;
+    Ok(())
+}
+
+/// Accounts for paying out the AI verdict without a reviewer. Anyone may
+/// sign (and pay the fee); the money can only go to the rental's recorded
+/// owner and renter and the platform wallet. The large accounts are boxed
+/// (heap, not stack): unboxed they overflow the 4KB stack frame.
+#[derive(Accounts)]
+pub struct SettleVerdict<'info> {
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+
+    #[account(mut)]
+    pub listing: Box<Account<'info, Listing>>,
+
+    #[account(
+        mut,
+        constraint = listing.key() == rental.listing @ crate::error::ErrorCode::ListingMismatch,
+    )]
+    pub rental: Box<Account<'info, Rental>>,
+
+    #[account(mut, seeds = [DISPUTE_SEED, rental.key().as_ref()], bump = dispute.bump)]
+    pub dispute: Box<Account<'info, Dispute>>,
+
+    /// CHECK: verified against rental.owner in the handler
+    #[account(mut)]
+    pub owner: UncheckedAccount<'info>,
+
+    /// CHECK: verified against rental.renter in the handler
+    #[account(mut)]
+    pub renter: UncheckedAccount<'info>,
+
+    /// CHECK: verified against the hardcoded PLATFORM_WALLET constant
+    #[account(mut, address = PLATFORM_WALLET)]
+    pub platform_wallet: UncheckedAccount<'info>,
+
+    pub caller: Signer<'info>,
+}
+
+fn pay_out_verdict(accounts: &mut SettleVerdict) -> Result<()> {
+    require_keys_eq!(accounts.rental.owner, accounts.owner.key(), crate::error::ErrorCode::NotListingOwner);
+    require_keys_eq!(accounts.rental.renter, accounts.renter.key(), crate::error::ErrorCode::NotRenter);
+    require!(accounts.rental.status == RentalStatus::Disputed, crate::error::ErrorCode::NotDisputed);
+
+    let owner_bps = accounts.dispute.verdict_owner_bps;
+    settle_rental(
+        &mut accounts.rental,
+        &mut accounts.listing,
+        &accounts.owner.to_account_info(),
+        &accounts.renter.to_account_info(),
+        &accounts.platform_wallet.to_account_info(),
+        owner_bps,
+        RentalStatus::Completed,
+    )?;
+
+    let dispute = &mut accounts.dispute;
+    dispute.status = DisputeStatus::Resolved;
+    dispute.final_owner_bps = owner_bps;
+    dispute.resolved_at = Clock::get()?.unix_timestamp;
+    Ok(())
+}
+
+// ---------- Anyone finalizes an unappealed verdict ----------
+
+pub fn handle_finalize_verdict(ctx: Context<SettleVerdict>) -> Result<()> {
+    require!(!ctx.accounts.config.paused, crate::error::ErrorCode::DisputesPaused);
+    // Appealed verdicts wait for a reviewer (or expire_appeal).
+    require!(
+        ctx.accounts.dispute.status == DisputeStatus::VerdictPosted,
+        crate::error::ErrorCode::InvalidDisputeStatus,
+    );
+    // Strictly after: either party can still appeal at the deadline itself.
+    require!(
+        Clock::get()?.unix_timestamp > ctx.accounts.dispute.appeal_deadline,
+        crate::error::ErrorCode::AppealWindowStillOpen,
+    );
+    pay_out_verdict(ctx.accounts)
+}
+
+// ---------- Anyone settles an appeal no reviewer got to in time ----------
+
+// The delay is the platform's fault, so the verdict stands and every bond
+// goes back. Blocked while paused like finalize_verdict, since it pays out
+// the AI verdict without a human.
+pub fn handle_expire_appeal(ctx: Context<SettleVerdict>) -> Result<()> {
+    require!(!ctx.accounts.config.paused, crate::error::ErrorCode::DisputesPaused);
+    require!(
+        ctx.accounts.dispute.status == DisputeStatus::Appealed,
+        crate::error::ErrorCode::InvalidDisputeStatus,
+    );
+    // Fixed when the verdict was posted (appeal_deadline + appeal_expiry_secs).
+    require!(
+        Clock::get()?.unix_timestamp > ctx.accounts.dispute.appeal_expires_at,
+        crate::error::ErrorCode::AppealNotExpired,
+    );
+    let accounts = ctx.accounts;
+    pay_out_verdict(accounts)?;
+    refund_bonds(
+        &mut accounts.dispute,
+        &accounts.owner.to_account_info(),
+        &accounts.renter.to_account_info(),
+    )
 }

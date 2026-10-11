@@ -170,6 +170,14 @@ pub mod greyswan {
         crate::instructions::verdict::handle_appeal(ctx)
     }
 
+    pub fn finalize_verdict(ctx: Context<SettleVerdict>) -> Result<()> {
+        crate::instructions::verdict::handle_finalize_verdict(ctx)
+    }
+
+    pub fn expire_appeal(ctx: Context<SettleVerdict>) -> Result<()> {
+        crate::instructions::verdict::handle_expire_appeal(ctx)
+    }
+
     pub fn resolve_dispute(
         ctx: Context<ResolveDispute>,
         owner_amount: u64,
