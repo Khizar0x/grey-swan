@@ -232,3 +232,121 @@ fn verdict_rejected_while_paused() {
     configure(&mut svm, &c.admin, ConfigUpdate { paused: Some(false), ..Default::default() });
     post(&mut svm, c.rental, &c.verdict, &[1]).unwrap();
 }
+
+// ---------- appeal ----------
+
+fn appeal_ix(rental: Pubkey, appellant: Pubkey) -> Instruction {
+    ix(
+        greyswan::instruction::Appeal {},
+        greyswan::accounts::Appeal {
+            config: config_pda(),
+            rental,
+            dispute: dispute_pda(&rental),
+            appellant,
+            system_program: system_program::ID,
+        },
+    )
+}
+
+fn appeal(svm: &mut LiteSVM, rental: Pubkey, appellant: &Keypair) -> Result<(), String> {
+    send(svm, appeal_ix(rental, appellant.pubkey()), appellant, &[appellant])
+}
+
+/// flagged() with a verdict of tiers [1, 0] (2000 bps: the owner would get
+/// 4,000,000 of the 20,000,000 deposit) posted at START_TIME.
+fn verdict_posted() -> (LiteSVM, Case) {
+    let (mut svm, c) = flagged();
+    post(&mut svm, c.rental, &c.verdict, &[1, 0]).unwrap();
+    (svm, c)
+}
+
+const VERDICT_BPS: u16 = 2_000;
+const VERDICT_OWNER_SHARE: u64 = DEPOSIT / 5;
+const DEFAULT_BOND_MIN: u64 = 10_000_000;
+
+#[test]
+fn renter_appeal_moves_the_minimum_bond_into_the_dispute() {
+    let (mut svm, c) = verdict_posted();
+    let renter_before = lamports(&svm, &c.renter.pubkey());
+    let dispute_before = lamports(&svm, &dispute_pda(&c.rental));
+
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+
+    // 10% of the 4,000,000 at stake is 400,000, below the 10,000,000 floor.
+    let d = dispute(&svm, &c.rental);
+    assert_eq!(d.status, DisputeStatus::Appealed);
+    assert!(d.renter_appealed && !d.owner_appealed);
+    assert_eq!((d.renter_bond, d.owner_bond), (DEFAULT_BOND_MIN, 0));
+    assert_eq!(lamports(&svm, &c.renter.pubkey()), renter_before - DEFAULT_BOND_MIN - 5000);
+    assert_eq!(lamports(&svm, &dispute_pda(&c.rental)), dispute_before + DEFAULT_BOND_MIN);
+}
+
+#[test]
+fn bond_is_a_share_of_what_each_party_stands_to_lose() {
+    let (mut svm, c) = verdict_posted();
+    configure(&mut svm, &c.admin, ConfigUpdate { bond_min_lamports: Some(1_000), ..Default::default() });
+    // The renter stands to lose the owner's 4,000,000 share; the owner the
+    // other 16,000,000. Bond is 10% of each.
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+    appeal(&mut svm, c.rental, &c.owner).unwrap();
+    let d = dispute(&svm, &c.rental);
+    assert_eq!(d.renter_bond, VERDICT_OWNER_SHARE / 10);
+    assert_eq!(d.owner_bond, (DEPOSIT - VERDICT_OWNER_SHARE) / 10);
+    assert!(d.owner_appealed && d.renter_appealed);
+    assert_eq!(d.status, DisputeStatus::Appealed);
+}
+
+#[test]
+fn each_party_appeals_at_most_once() {
+    let (mut svm, c) = verdict_posted();
+    appeal(&mut svm, c.rental, &c.owner).unwrap();
+    assert_program_err(appeal(&mut svm, c.rental, &c.owner), ErrorCode::AlreadyAppealed);
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+    assert_program_err(appeal(&mut svm, c.rental, &c.renter), ErrorCode::AlreadyAppealed);
+    assert_eq!(dispute(&svm, &c.rental).owner_bond, DEFAULT_BOND_MIN);
+}
+
+#[test]
+fn appeal_allowed_up_to_and_at_the_deadline_only() {
+    let (mut svm, c) = verdict_posted();
+    set_time(&mut svm, START_TIME + APPEAL_WINDOW);
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+    set_time(&mut svm, START_TIME + APPEAL_WINDOW + 1);
+    assert_program_err(appeal(&mut svm, c.rental, &c.owner), ErrorCode::AppealWindowClosed);
+    assert!(!dispute(&svm, &c.rental).owner_appealed);
+}
+
+#[test]
+fn appeal_rejected_for_anyone_but_owner_or_renter() {
+    let (mut svm, c) = verdict_posted();
+    let stranger = funded(&mut svm);
+    for signer in [&c.admin, &c.verdict, &c.reviewer, &stranger] {
+        assert_program_err(appeal(&mut svm, c.rental, signer), ErrorCode::NotRentalParty);
+    }
+    assert_eq!(dispute(&svm, &c.rental).status, DisputeStatus::VerdictPosted);
+}
+
+#[test]
+fn appeal_rejected_before_any_verdict() {
+    let (mut svm, c) = flagged();
+    assert_program_err(appeal(&mut svm, c.rental, &c.renter), ErrorCode::InvalidDisputeStatus);
+}
+
+#[test]
+fn appeal_still_allowed_while_paused() {
+    // Pause stops automatic payouts; appealing only hands the case to a human.
+    let (mut svm, c) = verdict_posted();
+    configure(&mut svm, &c.admin, ConfigUpdate { paused: Some(true), ..Default::default() });
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+}
+
+#[test]
+fn appeal_rejected_when_owner_and_renter_are_one_wallet() {
+    let (mut svm, c) = flagged();
+    let listing = list_item(&mut svm, &c.owner, "Fender Strat");
+    let own = rent(&mut svm, listing, &c.owner);
+    all_phases(&mut svm, own, &c.owner, &c.owner);
+    flag_return_issue(&mut svm, own, &c.owner).unwrap();
+    post(&mut svm, own, &c.verdict, &[1]).unwrap();
+    assert_program_err(appeal(&mut svm, own, &c.owner), ErrorCode::SameOwnerAndRenter);
+}

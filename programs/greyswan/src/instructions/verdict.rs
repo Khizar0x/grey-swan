@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
+use anchor_lang::system_program;
 use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_BPS, MAX_VERDICT_TIERS, RUBRIC_TIERS};
+use crate::instructions::confirm_return::bps_of;
 use crate::state::{Config, Dispute, DisputeKind, DisputeStatus, Rental, RentalStatus};
 
 // The damage-dispute engine for ReturnIssue disputes (the owner flagged a
@@ -95,6 +97,81 @@ pub fn handle_post_verdict(
     dispute.appeal_deadline = appeal_deadline;
     dispute.appeal_expires_at = appeal_expires_at;
     dispute.status = DisputeStatus::VerdictPosted;
+
+    Ok(())
+}
+
+// ---------- Owner or renter appeals the verdict ----------
+
+/// What an appeal costs: bond_bps of what the appellant stands to lose
+/// under the verdict (for the renter, the owner's deposit share; for the
+/// owner, the rest of the deposit), but never less than bond_min_lamports.
+pub(crate) fn appeal_bond(config: &Config, deposit: u64, verdict_owner_bps: u16, by_owner: bool) -> Result<u64> {
+    let owner_share = bps_of(deposit, verdict_owner_bps)?;
+    let at_stake = if by_owner { deposit - owner_share } else { owner_share };
+    Ok(bps_of(at_stake, config.bond_bps)?.max(config.bond_min_lamports))
+}
+
+#[derive(Accounts)]
+pub struct Appeal<'info> {
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+
+    pub rental: Account<'info, Rental>,
+
+    // Holds the bond until a reviewer refunds or forfeits it.
+    #[account(mut, seeds = [DISPUTE_SEED, rental.key().as_ref()], bump = dispute.bump)]
+    pub dispute: Account<'info, Dispute>,
+
+    #[account(mut)]
+    pub appellant: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+// Not blocked by pause: appealing only moves the decision to a human.
+pub fn handle_appeal(ctx: Context<Appeal>) -> Result<()> {
+    let rental = &ctx.accounts.rental;
+    let appellant = ctx.accounts.appellant.key();
+    let by_owner = appellant == rental.owner;
+    require!(by_owner || appellant == rental.renter, crate::error::ErrorCode::NotRentalParty);
+    // With one wallet on both sides there is no other party to appeal against,
+    // and a bond refund rule that depends on which side appealed is meaningless.
+    require_keys_neq!(rental.owner, rental.renter, crate::error::ErrorCode::SameOwnerAndRenter);
+
+    let dispute = &ctx.accounts.dispute;
+    require!(
+        matches!(dispute.status, DisputeStatus::VerdictPosted | DisputeStatus::Appealed),
+        crate::error::ErrorCode::InvalidDisputeStatus,
+    );
+    require!(
+        Clock::get()?.unix_timestamp <= dispute.appeal_deadline,
+        crate::error::ErrorCode::AppealWindowClosed,
+    );
+    let already = if by_owner { dispute.owner_appealed } else { dispute.renter_appealed };
+    require!(!already, crate::error::ErrorCode::AlreadyAppealed);
+
+    let bond = appeal_bond(&ctx.accounts.config, rental.deposit_amount, dispute.verdict_owner_bps, by_owner)?;
+    system_program::transfer(
+        CpiContext::new(
+            system_program::ID,
+            system_program::Transfer {
+                from: ctx.accounts.appellant.to_account_info(),
+                to: ctx.accounts.dispute.to_account_info(),
+            },
+        ),
+        bond,
+    )?;
+
+    let dispute = &mut ctx.accounts.dispute;
+    if by_owner {
+        dispute.owner_appealed = true;
+        dispute.owner_bond = bond;
+    } else {
+        dispute.renter_appealed = true;
+        dispute.renter_bond = bond;
+    }
+    dispute.status = DisputeStatus::Appealed;
 
     Ok(())
 }

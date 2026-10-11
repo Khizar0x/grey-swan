@@ -166,6 +166,10 @@ pub mod greyswan {
         crate::instructions::verdict::handle_post_verdict(ctx, tiers, prompt_hash, output_hash)
     }
 
+    pub fn appeal(ctx: Context<Appeal>) -> Result<()> {
+        crate::instructions::verdict::handle_appeal(ctx)
+    }
+
     pub fn resolve_dispute(
         ctx: Context<ResolveDispute>,
         owner_amount: u64,
