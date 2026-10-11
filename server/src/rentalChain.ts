@@ -12,6 +12,9 @@ export interface OnChainRentalSummary {
   owner: string
   renter: string
   isCompleted: boolean
+  // Handover phases already submitted (0 to 4): HandoverPhase discriminant.
+  // Phase N is open for its party exactly when this equals N - 1.
+  currentPhase: number
 }
 
 // Chat needs to know who the two real parties are and whether the rental is
@@ -39,6 +42,7 @@ export async function fetchRentalSummary(rentalPubkey: string): Promise<OnChainR
   const owner = new PublicKey(data.subarray(40, 72)).toBase58()
   const renter = new PublicKey(data.subarray(72, 104)).toBase58()
   const status = data[138]
+  const currentPhase = data[139]
 
-  return { owner, renter, isCompleted: status === RENTAL_STATUS_COMPLETED }
+  return { owner, renter, isCompleted: status === RENTAL_STATUS_COMPLETED, currentPhase }
 }

@@ -12,6 +12,7 @@ import { type DeliveryMethod, getDeliveryMethod, upsertDeliveryMethod } from './
 import { type DisputeReviewStatus, listDisputeNotes, upsertDisputeNote } from './disputes.js'
 import { getAllListingAreas, getListingArea, upsertListingArea } from './listingAreas.js'
 import { countUnread, getLastMessage, insertMessage, listMessages, markReadExceptSender, MESSAGE_MAX_LEN } from './messages.js'
+import { getPhaseCode, issuePhaseCode } from './phaseCodes.js'
 import { getProfile, upsertProfile } from './profiles.js'
 import { requireRentalParty } from './rentalAuth.js'
 import { fetchRentalSummary } from './rentalChain.js'
@@ -292,6 +293,39 @@ app.post('/api/delivery', requireAuth, (req, res) => {
 
   const row = upsertDeliveryMethod(rentalPubkey, method, ownerPubkey, renterPubkey)
   res.json({ method: row.method })
+})
+
+// Handover phase codes (see phaseCodes.ts). Phases 1 and 4 belong to the
+// owner, 2 and 3 to the renter. Either party can read a code that already
+// exists, but a code is only ever issued to the acting party, and only while
+// that phase is the next one on-chain, so it can't be minted early.
+const PHASE_ACTOR: Record<number, 'owner' | 'renter'> = { 1: 'owner', 2: 'renter', 3: 'renter', 4: 'owner' }
+
+app.get('/api/phase-code/:rentalPubkey/:phase', requireAuth, requireRentalParty, (req, res) => {
+  const rentalPubkey = req.params.rentalPubkey as string
+  const phase = Number(req.params.phase)
+  if (!Number.isInteger(phase) || !(phase in PHASE_ACTOR)) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+
+  const existing = getPhaseCode(rentalPubkey, phase)
+  if (existing) {
+    res.json({ code: existing })
+    return
+  }
+
+  const rental = req.rental!
+  const actor = rental[PHASE_ACTOR[phase]]
+  if (req.authPubkey !== actor) {
+    res.status(404).json({ error: 'No code has been issued for this step yet.' })
+    return
+  }
+  if (rental.currentPhase !== phase - 1) {
+    res.status(409).json({ error: "This step isn't open yet." })
+    return
+  }
+  res.json({ code: issuePhaseCode(rentalPubkey, phase, actor) })
 })
 
 // Listing areas: a coarse, public location (city, neighborhood, or
