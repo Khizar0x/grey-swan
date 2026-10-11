@@ -18,15 +18,24 @@ export interface ListingCardData {
   photos: string
 }
 
-function PhotoPlaceholder({ loading }: { loading?: boolean }) {
+function ListingPhotoFallback({ type }: { type: 'loading' | 'missing' | 'failed' }) {
+  const isLoading = type === 'loading'
   return (
     <div
-      className={`flex aspect-[4/3] items-center justify-center ${loading ? 'animate-pulse' : ''}`}
+      className={`flex aspect-square w-full flex-col items-center justify-center gap-1.5 p-3 text-center transition-colors ${
+        isLoading ? 'animate-pulse' : ''
+      }`}
       style={{ background: C.surface2 }}
     >
-      <div style={{ color: C.faint }}>
+      <div
+        className="flex h-9 w-9 items-center justify-center rounded-full"
+        style={{ background: C.subtleBg, border: `1px solid ${C.border}`, color: C.muted }}
+      >
         <IconCamera />
       </div>
+      <span className="text-[11px] font-medium" style={{ color: C.faint }}>
+        {isLoading ? 'Loading photo…' : 'No photo yet'}
+      </span>
     </div>
   )
 }
@@ -39,37 +48,42 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
   return (
     <Link
       to={`/listing/${listing.publicKey.toBase58()}`}
-      className="group block overflow-hidden rounded-xl transition-all hover:-translate-y-0.5 hover:shadow-md"
+      className="group block overflow-hidden rounded-xl transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
       style={{ background: C.surface, border: `1px solid ${C.border}` }}
     >
       <div className="relative overflow-hidden">
         {urls[0] ? (
           <div className="aspect-square overflow-hidden" style={{ background: C.surface2 }}>
-            <RetryImage src={urls[0]} alt={listing.itemName} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <RetryImage
+              src={urls[0]}
+              alt={listing.itemName}
+              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+              fallback={<ListingPhotoFallback type="failed" />}
+            />
           </div>
         ) : (
-          <PhotoPlaceholder loading={photosLoading} />
+          <ListingPhotoFallback type={photosLoading ? 'loading' : 'missing'} />
         )}
         <span
-          className="absolute left-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+          className="absolute left-2.5 top-2.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-sm"
           style={{ background: catColor, color: '#FFFFFF' }}
         >
           {categoryLabel(listing.category)}
         </span>
         {rarity !== 'common' && (
           <span
-            className="absolute right-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+            className="absolute right-2.5 top-2.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-sm"
             style={{ background: C.gold, color: '#FFFFFF' }}
           >
             {rarityLabel(listing.rarityTier)}
           </span>
         )}
       </div>
-      <div className="p-2.5">
-        <h3 className="mb-1 truncate text-sm font-bold leading-snug" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+      <div className="flex flex-col gap-1 p-3">
+        <h3 className="truncate text-sm font-bold leading-snug transition-colors group-hover:opacity-85" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
           {listing.itemName}
         </h3>
-        <div>
+        <div className="flex items-baseline gap-1">
           <span className="text-sm font-bold" style={{ color: C.cream }}>
             {formatSol(listing.rentalPrice)}
           </span>
@@ -77,8 +91,8 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
             /week
           </span>
         </div>
-        <div className="mt-0.5 truncate text-[11px]" style={{ color: C.faint }}>
-          + {formatSol(listing.depositAmount)} deposit
+        <div className="truncate text-[11px] font-medium" style={{ color: C.trust }}>
+          {formatSol(listing.depositAmount)} deposit safely held
         </div>
       </div>
     </Link>
