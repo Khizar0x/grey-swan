@@ -96,7 +96,10 @@ pub struct ResolveDispute<'info> {
     #[account(mut)]
     pub listing: Account<'info, Listing>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = listing.key() == rental.listing @ crate::error::ErrorCode::ListingMismatch,
+    )]
     pub rental: Account<'info, Rental>,
 
     pub admin: Signer<'info>,

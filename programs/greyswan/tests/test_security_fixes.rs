@@ -14,7 +14,10 @@ mod common;
 use {
     anchor_lang::solana_program::system_program,
     common::*,
-    greyswan::state::{Listing, Rental, RentalStatus},
+    greyswan::{
+        error::ErrorCode,
+        state::{Listing, Rental, RentalStatus},
+    },
     solana_signer::Signer,
 };
 
@@ -59,10 +62,7 @@ fn claim_refund_rejected_after_renter_received_item() {
     let held_before = lamports(&svm, &rental);
 
     let result = claim_refund(&mut svm, listing, rental, &renter);
-    assert!(
-        result.is_err(),
-        "EXPLOIT: renter took a full refund after receiving the item"
-    );
+    assert_program_err(result, ErrorCode::OwnerAlreadyShipped);
     assert_eq!(lamports(&svm, &rental), held_before, "funds must stay held");
     assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Active);
 }
@@ -79,7 +79,10 @@ fn claim_refund_rejected_once_owner_has_shipped() {
     phase1(&mut svm, rental, &owner).unwrap();
     warp(&mut svm, SEVEN_DAYS + 1);
 
-    assert!(claim_refund(&mut svm, listing, rental, &renter).is_err());
+    assert_program_err(
+        claim_refund(&mut svm, listing, rental, &renter),
+        ErrorCode::OwnerAlreadyShipped,
+    );
 }
 
 #[test]
@@ -153,7 +156,7 @@ fn confirm_return_rejects_unrelated_listing() {
         &[&t.owner_a],
     );
     assert_listing_b_untouched(&t);
-    assert!(result.is_err());
+    assert_program_err(result, ErrorCode::ListingMismatch);
 }
 
 #[test]
@@ -163,7 +166,7 @@ fn claim_refund_rejects_unrelated_listing() {
 
     let result = claim_refund(&mut t.svm, t.listing_b, t.rental_a, &t.renter_a);
     assert_listing_b_untouched(&t);
-    assert!(result.is_err());
+    assert_program_err(result, ErrorCode::ListingMismatch);
 }
 
 #[test]
@@ -192,7 +195,7 @@ fn resolve_dispute_rejects_unrelated_listing() {
         &[&admin],
     );
     assert_listing_b_untouched(&t);
-    assert!(result.is_err());
+    assert_program_err(result, ErrorCode::ListingMismatch);
 }
 
 #[test]

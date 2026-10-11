@@ -58,4 +58,8 @@ pub enum ErrorCode {
     DisputeReasonTooLong,
     #[msg("The resolution amounts must equal the total funds held")]
     ResolutionAmountMismatch,
+    #[msg("A refund is only available if the item was never sent")]
+    OwnerAlreadyShipped,
+    #[msg("This listing does not belong to this rental")]
+    ListingMismatch,
 }

@@ -1,13 +1,16 @@
 use anchor_lang::prelude::*;
 use crate::constants::AUTO_REFUND_TIMEOUT_SECONDS;
-use crate::state::{Listing, Rental, RentalStatus};
+use crate::state::{HandoverPhase, Listing, Rental, RentalStatus};
 
 #[derive(Accounts)]
 pub struct ClaimRefund<'info> {
     #[account(mut)]
     pub listing: Account<'info, Listing>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = listing.key() == rental.listing @ crate::error::ErrorCode::ListingMismatch,
+    )]
     pub rental: Account<'info, Rental>,
 
     #[account(mut)]
@@ -26,6 +29,15 @@ pub fn handle_claim_refund(ctx: Context<ClaimRefund>) -> Result<()> {
     require!(
         ctx.accounts.rental.status == RentalStatus::Active,
         crate::error::ErrorCode::InvalidRentalStatus,
+    );
+
+    // The refund covers one case only: the owner never shipped. Once phase 1
+    // is in, the item is (or should be) with the renter, whose remedy is
+    // reject_on_arrival, which sends it to admin review instead of paying
+    // the renter out unilaterally.
+    require!(
+        ctx.accounts.rental.current_phase == HandoverPhase::None,
+        crate::error::ErrorCode::OwnerAlreadyShipped,
     );
 
     let now = Clock::get()?.unix_timestamp;
