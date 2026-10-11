@@ -6,7 +6,7 @@ import type { NextFunction, Request, Response } from 'express'
 import multer from 'multer'
 import { type AddressRole, getAddress, getLatestRenterAddress, upsertAddress } from './addresses.js'
 import { issueNonceMessage, issueSessionToken, requireAuth, verifySignInSignature } from './auth.js'
-import { getAdminPubkey } from './config.js'
+import { getReviewerPubkeys } from './config.js'
 import { getDefaultAddress, upsertDefaultAddress } from './defaultAddress.js'
 import { type DeliveryMethod, getDeliveryMethod, upsertDeliveryMethod } from './delivery.js'
 import { type DisputeReviewStatus, listDisputeNotes, upsertDisputeNote } from './disputes.js'
@@ -416,20 +416,22 @@ app.post('/api/listing-area', requireAuth, (req, res) => {
 // Dispute review notes: the dispute itself (reason, photos, frozen amount)
 // lives on-chain and is read straight from the program on the frontend —
 // this only stores the admin's own review status and free-text note, same
-// off-chain DB as addresses. requireAdmin checks the caller's proven pubkey
-// (from requireAuth) against the Config PDA's admin field read on-chain, so
+// off-chain DB as addresses. requireReviewer checks the caller's proven pubkey
+// (from requireAuth) against the admin and reviewers on the Config PDA, read on-chain, so
 // gating isn't just a frontend redirect that a direct API call could skip.
-async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+// Reviewers (listed on Config) decide disputes alongside the admin, so they
+// need the same notes. Read live from Config, never from the request.
+async function requireReviewer(req: Request, res: Response, next: NextFunction) {
   try {
-    const admin = await getAdminPubkey()
-    if (req.authPubkey !== admin) {
-      res.status(403).json({ error: 'Admin only.' })
+    const reviewers = await getReviewerPubkeys()
+    if (!req.authPubkey || !reviewers.includes(req.authPubkey)) {
+      res.status(403).json({ error: 'Reviewers only.' })
       return
     }
     next()
   } catch (err) {
-    console.error('Admin check failed:', err)
-    res.status(500).json({ error: 'Could not verify admin access.' })
+    console.error('Reviewer check failed:', err)
+    res.status(500).json({ error: 'Could not verify reviewer access.' })
   }
 }
 
@@ -439,11 +441,11 @@ function isValidDisputeStatus(value: unknown): value is DisputeReviewStatus {
   return typeof value === 'string' && (DISPUTE_STATUSES as string[]).includes(value)
 }
 
-app.get('/api/admin/dispute-notes', requireAuth, requireAdmin, (_req, res) => {
+app.get('/api/admin/dispute-notes', requireAuth, requireReviewer, (_req, res) => {
   res.json({ notes: listDisputeNotes() })
 })
 
-app.post('/api/admin/dispute-notes', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/admin/dispute-notes', requireAuth, requireReviewer, (req, res) => {
   const { rentalPubkey, status, note } = req.body ?? {}
 
   if (!isValidPubkey(rentalPubkey) || !isValidDisputeStatus(status)) {
