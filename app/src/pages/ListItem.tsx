@@ -474,7 +474,7 @@ export function ListItem() {
               type="submit"
               disabled={submitting || signingIn}
               className="w-full rounded-2xl py-4 text-base font-bold transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
-              style={{ background: C.primary, color: C.onAccent, boxShadow: '0 4px 16px rgba(255,107,53,0.32)' }}
+              style={{ background: C.primary, color: C.onAccent, boxShadow: C.primaryGlow }}
             >
               {submitButtonLabel}
             </button>
