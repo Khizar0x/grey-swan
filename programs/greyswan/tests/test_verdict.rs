@@ -127,16 +127,31 @@ fn verdict_is_scored_on_chain_and_opens_the_appeal_window() {
 }
 
 #[test]
-fn verdict_score_is_capped_at_the_whole_deposit() {
+fn verdict_adding_up_to_a_major_share_needs_a_human() {
+    // M2: default rubric, Major = 8000. Worst tier 2 (5000) plus extra
+    // findings at 500 each.
+    let (mut svm, c) = flagged();
+    // 5000 + 7 * 500 = 8500: above Major.
+    assert_program_err(post(&mut svm, c.rental, &c.verdict, &[2; 8]), ErrorCode::NeedsHumanReview);
+    // 5000 + 6 * 500 = 8000: exactly Major, still refused.
+    assert_program_err(post(&mut svm, c.rental, &c.verdict, &[2; 7]), ErrorCode::NeedsHumanReview);
+    assert_eq!(dispute(&svm, &c.rental).status, DisputeStatus::Open);
+    // 5000 + 5 * 500 = 7500: just below, posted.
+    post(&mut svm, c.rental, &c.verdict, &[2; 6]).unwrap();
+    assert_eq!(dispute(&svm, &c.rental).verdict_owner_bps, 7_500);
+}
+
+#[test]
+fn verdict_major_limit_follows_the_rubric() {
+    // A single tier-2 finding at or above a lowered Major value is refused.
     let (mut svm, c) = flagged();
     configure(
         &mut svm,
         &c.admin,
-        ConfigUpdate { rubric_bps: Some([0, 1_500, 9_000, 9_500, 10_000]), ..Default::default() },
+        ConfigUpdate { rubric_bps: Some([0, 1_500, 5_000, 5_000, 10_000]), ..Default::default() },
     );
-    // 9000 + 7 * 500 = 12500, capped to 10000.
-    post(&mut svm, c.rental, &c.verdict, &[2; 8]).unwrap();
-    assert_eq!(dispute(&svm, &c.rental).verdict_owner_bps, 10_000);
+    assert_program_err(post(&mut svm, c.rental, &c.verdict, &[2]), ErrorCode::NeedsHumanReview);
+    post(&mut svm, c.rental, &c.verdict, &[1]).unwrap();
 }
 
 #[test]

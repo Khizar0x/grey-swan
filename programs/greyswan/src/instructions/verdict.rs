@@ -13,6 +13,11 @@ use crate::state::{Config, Dispute, DisputeKind, DisputeStatus, Listing, Pool, R
 // to a human reviewer; otherwise anyone can finalize once the window closes.
 // Every other dispute kind goes straight to a reviewer via resolve_dispute.
 
+/// Rubric index of the Major tier. A human decision giving the owner at
+/// least rubric_bps[MAJOR_TIER] needs two reviewers, and the AI can never
+/// award that much on its own.
+pub(crate) const MAJOR_TIER: usize = 3;
+
 /// Deposit share to the owner for a verdict: the rubric value of the worst
 /// finding, plus extra_finding_bps for each further finding, capped at 100%.
 pub(crate) fn verdict_owner_bps(config: &Config, tiers: &[u8]) -> u16 {
@@ -87,6 +92,12 @@ pub fn handle_post_verdict(
         .checked_add(config.appeal_expiry_secs)
         .ok_or(crate::error::ErrorCode::MathOverflow)?;
     let owner_bps = verdict_owner_bps(config, &tiers);
+    // Several smaller findings can add up to a Major share, which a single
+    // human reviewer couldn't award either.
+    require!(
+        owner_bps < config.rubric_bps[MAJOR_TIER],
+        crate::error::ErrorCode::NeedsHumanReview,
+    );
 
     let dispute = &mut ctx.accounts.dispute;
     dispute.tier_count = tiers.len() as u8;
@@ -347,10 +358,6 @@ pub fn handle_void_verdict(ctx: Context<VoidVerdict>) -> Result<()> {
 }
 
 // ---------- A reviewer decides a damage dispute ----------
-
-/// Rubric index of the Major tier. A decision giving the owner at least
-/// rubric_bps[MAJOR_TIER] of the deposit needs two reviewers.
-const MAJOR_TIER: usize = 3;
 
 /// Checks the second reviewer when one is required (or supplied): it must
 /// be a reviewer (or the admin) and not the first reviewer. Returns the key
