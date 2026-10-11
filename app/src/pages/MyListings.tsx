@@ -22,25 +22,31 @@ import { withTimeout } from '../lib/withTimeout'
 const AVAILABLE_STYLE: StatusStyle = { background: 'var(--gs-badge-positive-bg)', color: C.green, border: '1px solid var(--gs-badge-positive-border)' }
 
 // A rental is "in progress" for this page's purposes if it hasn't reached a
-// terminal state yet — used to find the one active rental (if any) tied to
+// terminal state yet: used to find the one active rental (if any) tied to
 // each of the owner's listings.
 function isTerminalStatus(status: Record<string, object>): boolean {
   const key = enumKey(status)
   return key === 'completed' || key === 'refundedAuto' || key === 'resolved'
 }
 
-function PhotoPlaceholder({ loading }: { loading?: boolean }) {
+function PhotoPlaceholder({ loading, failed }: { loading?: boolean; failed?: boolean }) {
   return (
-    <div className={`flex aspect-square items-center justify-center ${loading ? 'animate-pulse' : ''}`} style={{ background: C.surface2 }}>
-      <div style={{ color: C.faint }}>
+    <div
+      className={`flex aspect-square flex-col items-center justify-center gap-1.5 p-4 text-center ${loading ? 'animate-pulse' : ''}`}
+      style={{ background: C.surface2, color: C.faint }}
+    >
+      <div className="h-6 w-6">
         <IconCamera />
       </div>
+      <span className="text-xs font-medium">
+        {loading ? 'Loading photo…' : failed ? "Couldn't load photo" : 'No photo yet'}
+      </span>
     </div>
   )
 }
 
-// Card style deliberately matches ListingCard.tsx (the homepage grid) —
-// same photo aspect ratio, category badge, and bold price — so this reads
+// Card style deliberately matches ListingCard.tsx (the homepage grid)
+// same photo aspect ratio, category badge, and bold price, so this reads
 // as the same marketplace rather than a separate admin-y list.
 function ListingCard({
   listing,
@@ -71,15 +77,23 @@ function ListingCard({
   return (
     <div className="relative flex flex-col overflow-hidden rounded-xl transition-all hover:shadow-md" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
       <UnreadBadge count={unread} />
-      <Link to={`/listing/${pubkeyStr}`} className="relative block">
+      <Link to={`/listing/${pubkeyStr}`} className="group relative block overflow-hidden">
         {urls[0] ? (
           <div className="aspect-square overflow-hidden" style={{ background: C.surface2 }}>
-            <RetryImage src={urls[0]} alt={listing.account.itemName} className="h-full w-full object-cover" />
+            <RetryImage
+              src={urls[0]}
+              alt={listing.account.itemName}
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              fallback={<PhotoPlaceholder failed />}
+            />
           </div>
         ) : (
           <PhotoPlaceholder loading={photosLoading} />
         )}
-        <span className="absolute left-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ background: catColor, color: '#FFFFFF' }}>
+        <span
+          className="absolute left-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-sm"
+          style={{ background: catColor, color: C.overlayText }}
+        >
           {categoryLabel(listing.account.category)}
         </span>
       </Link>
@@ -96,22 +110,34 @@ function ListingCard({
           </span>
         </div>
 
-        <div>
-          <span className="text-sm font-bold" style={{ color: C.cream }}>
-            {formatSol(listing.account.rentalPrice)}
-          </span>
-          <span className="text-xs" style={{ color: C.faint }}>
-            {' '}
-            /week + {formatSol(listing.account.depositAmount)} deposit
-          </span>
+        <div className="flex flex-col gap-1.5 rounded-lg p-2.5" style={{ background: C.subtleBg, border: `1px solid ${C.border}` }}>
+          <div className="flex items-baseline justify-between">
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
+              Rental fee
+            </span>
+            <span className="text-sm font-bold" style={{ color: C.cream }}>
+              {formatSol(listing.account.rentalPrice)} <span className="text-xs font-normal" style={{ color: C.faint }}>/week</span>
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between" style={{ borderTop: `1px solid ${C.border}`, paddingTop: '0.25rem' }}>
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: C.trust }}>
+              Deposit
+            </span>
+            <span className="text-xs font-bold" style={{ color: C.trust }}>
+              {formatSol(listing.account.depositAmount)} <span className="text-[10px] font-normal" style={{ color: C.faint }}>(refundable)</span>
+            </span>
+          </div>
         </div>
 
         {rental && (
-          <p className="text-xs" style={{ color: C.faint }}>
-            Rented by {rental.account.renter.toBase58().slice(0, 4)}...{rental.account.renter.toBase58().slice(-4)}
-            <br />
-            <span style={{ color: C.trust, fontWeight: 600 }}>{formatSol(rental.account.depositAmount)} deposit safely held</span>
-          </p>
+          <div className="rounded-lg p-2 text-xs" style={{ background: C.trustSoft, border: '1px solid var(--gs-badge-positive-border)' }}>
+            <p style={{ color: C.muted }}>
+              Rented by <span className="font-mono">{rental.account.renter.toBase58().slice(0, 4)}...{rental.account.renter.toBase58().slice(-4)}</span>
+            </p>
+            <p className="mt-0.5 font-semibold" style={{ color: C.trust }}>
+              {formatSol(rental.account.depositAmount)} deposit safely held
+            </p>
+          </div>
         )}
 
         <div className="mt-auto flex flex-wrap gap-1.5 pt-1.5">
@@ -163,7 +189,7 @@ function ListingCard({
                 <button
                   onClick={onConfirmRemove}
                   className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all hover:opacity-80"
-                  style={{ color: C.rust, border: '1px solid rgba(184,92,66,0.35)', background: 'transparent' }}
+                  style={{ color: C.rust, border: '1px solid var(--gs-badge-negative-border)', background: 'transparent' }}
                 >
                   Remove
                 </button>
