@@ -8,6 +8,85 @@
   },
   "instructions": [
     {
+      "name": "admin_open_dispute",
+      "discriminator": [
+        29,
+        253,
+        255,
+        130,
+        240,
+        15,
+        170,
+        183
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    },
+    {
       "name": "claim_refund",
       "discriminator": [
         15,
@@ -41,6 +120,72 @@
       "args": []
     },
     {
+      "name": "complete_after_inspection_deadline",
+      "discriminator": [
+        87,
+        247,
+        0,
+        51,
+        72,
+        203,
+        2,
+        14
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "platform_wallet",
+          "writable": true,
+          "address": "32tt6bRdV1bM9D9ZkgfPFz3kt44YgpfJ6yYhfz8kiYbD"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "confirm_arrival_after_deadline",
       "discriminator": [
         164,
@@ -59,6 +204,7 @@
         },
         {
           "name": "timeline",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -122,6 +268,101 @@
           "name": "platform_wallet",
           "writable": true,
           "address": "32tt6bRdV1bM9D9ZkgfPFz3kt44YgpfJ6yYhfz8kiYbD"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "flag_not_returned",
+      "discriminator": [
+        99,
+        199,
+        174,
+        64,
+        204,
+        70,
+        25,
+        211
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
         },
         {
           "name": "system_program",
@@ -780,6 +1021,7 @@
         },
         {
           "name": "timeline",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -830,6 +1072,49 @@
         {
           "name": "rental",
           "writable": true
+        },
+        {
+          "name": "timeline",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "renter",
@@ -1269,6 +1554,21 @@
       "code": 6042,
       "name": "ArrivalWindowStillOpen",
       "msg": "The renter still has time to confirm arrival"
+    },
+    {
+      "code": 6043,
+      "name": "ReturnWindowStillOpen",
+      "msg": "The renter still has time to send the item back"
+    },
+    {
+      "code": 6044,
+      "name": "RentalTimesNotRecorded",
+      "msg": "This rental has no recorded dates for this step"
+    },
+    {
+      "code": 6045,
+      "name": "InspectionWindowStillOpen",
+      "msg": "The owner still has time to check the returned item"
     }
   ],
   "types": [
@@ -1397,11 +1697,19 @@
             "type": "u64"
           },
           {
+            "name": "not_returned_grace_secs",
+            "type": "i64"
+          },
+          {
+            "name": "inspection_deadline_secs",
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                128
+                112
               ]
             }
           }
@@ -1503,6 +1811,18 @@
             "type": {
               "option": "u64"
             }
+          },
+          {
+            "name": "not_returned_grace_secs",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "inspection_deadline_secs",
+            "type": {
+              "option": "i64"
+            }
           }
         ]
       }
@@ -1581,6 +1901,12 @@
           },
           {
             "name": "ArrivalIssue"
+          },
+          {
+            "name": "NotReturned"
+          },
+          {
+            "name": "AdminOpened"
           }
         ]
       }
@@ -1843,11 +2169,27 @@
             "type": "i64"
           },
           {
+            "name": "arrived_at",
+            "type": "i64"
+          },
+          {
+            "name": "return_due_at",
+            "type": "i64"
+          },
+          {
+            "name": "return_shipped_at",
+            "type": "i64"
+          },
+          {
+            "name": "inspection_deadline",
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                56
+                24
               ]
             }
           }
