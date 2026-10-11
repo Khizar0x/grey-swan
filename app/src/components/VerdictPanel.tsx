@@ -8,6 +8,8 @@ import { Btn } from './atoms'
 
 type Action = 'appeal' | 'release'
 
+const TIER_LABELS = ['Normal wear', 'Cosmetic', 'Functional damage', 'Major damage', 'Destroyed or missing']
+
 // The review result for a damage report: what the automatic review suggests,
 // how long either side has to appeal, and the buttons that are valid right now.
 export function VerdictPanel({
@@ -97,6 +99,11 @@ export function VerdictPanel({
               </span>
             </div>
           </div>
+          {dispute.tierCount > 0 && (
+            <p className="text-xs leading-relaxed" style={{ color: C.muted }}>
+              What it found: {dispute.tiers.slice(0, dispute.tierCount).map((t) => TIER_LABELS[t] ?? 'Unknown').join(', ')}.
+            </p>
+          )}
           <p className="text-xs leading-relaxed" style={{ color: C.faint }}>
             The rental fee is separate: it is paid to the owner, less the platform fee.
           </p>

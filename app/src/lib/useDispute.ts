@@ -15,9 +15,17 @@ export interface DisputeState {
 // Reads the rental's Dispute account (null for a rental disputed before
 // Dispute accounts existed) and the Config it is judged by. `refreshKey`
 // changes whenever the page has just re-read the rental, so the verdict never
-// lags behind a mutation.
+// lags behind a mutation. It also refreshes every 20 seconds.
 export function useDispute(program: Program<Greyswan>, rentalPubkey: string, refreshKey: unknown): DisputeState {
   const [state, setState] = useState<DisputeState>({ dispute: null, config: null, loaded: false })
+  // A verdict is posted by a separate service, not by anything on this page,
+  // so the page re-reads the account now and then instead of waiting for a
+  // reload.
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 20_000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -34,7 +42,7 @@ export function useDispute(program: Program<Greyswan>, rentalPubkey: string, ref
     return () => {
       cancelled = true
     }
-  }, [program, rentalPubkey, refreshKey])
+  }, [program, rentalPubkey, refreshKey, tick])
 
   return state
 }
