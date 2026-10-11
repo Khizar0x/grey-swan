@@ -24,6 +24,7 @@ The user's mentor explicitly said: write code with AI, but understand the logic.
 ## Brand voice and copy rules — apply to all UI text
 - Tone: "prestige but welcoming" — professional, warm, not corporate-cold, not casual
 - **Never use these words in UI copy**: escrow, gear, equipment, decentralized, P2P, smart contract, protocol, program ID, on-chain, transaction, counterparty, asset
+- The banned-word rule is for app UI copy only. README.md and docs/pitch-draft.md are written for hackathon judges and may use technical terms (on-chain, smart contract, transaction, protocol, escrow). Facts and numbers in those docs must still match the code, with no unsourced figures.
 - Use "item" as the generic noun, or the specific thing (camera, drone, guitar)
 - "Renter" / "Owner", not "counterparty"
 - "Rental details," not "transaction details"

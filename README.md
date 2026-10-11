@@ -8,14 +8,14 @@ Live program on devnet: `2YnarssLwdKPi3Br6C6cUcAuKyyoDagXaHZWo3kykcko`
 
 ## What Grey Swan Is
 
-Grey Swan is a peer-to-peer item rental marketplace that removes the risk of renting high-value items to strangers.
+Grey Swan is a peer-to-peer item rental marketplace that reduces the risk of renting high-value items to strangers.
 
-Renting out expensive cameras, audio gear, specialist tools, and outdoor equipment carries high risk: renters worry about losing their deposit to dishonest claims, while owners worry their equipment will come back damaged or not at all. Traditional platforms charge 20% to 30% platform fees or rely on slow, opaque dispute teams.
+Renting out expensive cameras, audio gear, specialist tools, and outdoor equipment carries high risk: renters worry about losing their deposit to dishonest claims, while owners worry their equipment will come back damaged or not at all. On most platforms the money sits in the platform's own accounts and disputes are settled out of sight.
 
 Grey Swan replaces centralized custody with a Solana Anchor program:
-- **Non-custodial deposit safety**: Security deposits and rental fees are locked in program-derived accounts (PDAs), never touching platform bank accounts.
+- **Deposits held by the program**: The rental fee and security deposit are held in the rental's own account, owned by the Grey Swan program, not in a platform bank account. The program decides where the money can go.
 - **Transparent conditions**: Both sides document physical item condition through a four-phase photo handover protocol before items travel and after they return.
-- **Auditable dispute resolution**: When an item returns damaged, an AI evaluation pipeline inspects handover photos and proposes damage severity tiers, the program calculates the payout using on-chain rubric math, and parties have a 24-hour window to appeal to human reviewers.
+- **Auditable dispute resolution**: When an item returns damaged, an AI evaluation pipeline inspects handover photos and proposes damage severity tiers, the program calculates the payout using on-chain rubric math, and either party can appeal to a human reviewer within an appeal window (24 hours by default, set in Config).
 
 ---
 
@@ -44,19 +44,23 @@ Every rental follows a strict, sequential lifecycle enforced by the Solana progr
        │
        ├────────────────────────────────────────┬────────────────────────────────────────┐
        ▼                                        ▼                                        ▼
-[Confirm Return]                        [Auto-Refund Claim]                     [Flag Return Issue]
-Owner confirms condition.               Owner inactive for 7 days.              Owner reports damage.
-- Deposit -> 100% to renter             - 100% refund to renter                 - Funds freeze
-- Rental fee -> 90% owner, 10% fee      - Owner receives nothing                - Dispute pipeline starts
+[Confirm Return]                        [Complete After Deadline]               [Flag Return Issue]
+Owner confirms condition.               Owner stays silent past the             Owner reports damage.
+- Deposit -> 100% to renter             inspection deadline; the renter         - Funds freeze
+- Rental fee -> 90% owner, 10% fee      completes the rental.                   - Dispute pipeline starts
+                                        - Same payout as Confirm Return
 ```
+
+If the owner never ships at all, the renter can call `claim_refund` once 7 days have passed since the rental started, and gets the rental fee and deposit back in full.
 
 ### Handover Protocol Details
 1. **Upfront Payment**: The renter pays the total rental fee plus the security deposit upfront. Rare and Antique items enforce an on-chain deposit ceiling of at most 45% of estimated item value.
 2. **Four Mandatory Handover Checkpoints**: The program enforces strict sequential progression: Phase 2 cannot execute before Phase 1, Phase 3 cannot execute before Phase 2, and Phase 4 cannot execute before Phase 3.
-3. **Photo Manifests on IPFS**: Each handover step submits an IPFS Content Identifier (CID) referencing a tamper-evident JSON manifest containing photo references, shot angles, and live capture metadata.
-4. **Completion or Auto-Refund**:
-   - If the owner confirms receipt (`confirm_return`), the program distributes funds: the renter receives 100% of their deposit back, the platform takes a 10% fee, and the owner receives the remainder of the rental fee.
-   - If the owner fails to confirm within 7 days after the rental ends, the renter can call `claim_refund` to recover their entire deposit and rental fee automatically.
+3. **Photo Manifests on IPFS**: Each handover step submits an IPFS Content Identifier (CID) pointing to a JSON manifest. Every photo in it records which shot it is (front, back, label and so on), whether it was captured by the in-app camera or uploaded, and the per-phase code for that step.
+4. **Deadlines**: Each side has a window to act, recorded in a timeline account. Defaults, adjustable by the admin within fixed limits: the renter has 5 days to confirm arrival, the owner waits 3 days past the return date before reporting an item as not returned, and the owner has 7 days to inspect a returned item. If a window passes, the other party gets a matching action (`confirm_arrival_after_deadline`, `flag_not_returned`, `flag_return_not_received`, `complete_after_inspection_deadline`).
+5. **Completion**:
+   - If the owner confirms the return (`confirm_return`), the program distributes funds: the renter receives 100% of their deposit back, the platform takes a 10% fee on the rental fee, and the owner receives the rest of the rental fee.
+   - If the owner never ships, the renter can call `claim_refund` after 7 days (see above).
 
 ---
 
@@ -69,35 +73,41 @@ When an owner flags damage after inspecting the returned item (`flag_return_issu
 - The AI never decides dollar or SOL amounts directly. It only identifies verified new damage and assigns standardized severity tiers (0 to 4):
   - Tier 0: Normal Wear (no deposit withheld)
   - Tier 1: Cosmetic (rubric default: 15% deposit share)
-  - Tier 2: Functional Damage (rubric default: 40% deposit share)
-  - Tier 3: Major (rubric default: 75% deposit share)
+  - Tier 2: Functional Damage (rubric default: 50% deposit share)
+  - Tier 3: Major (rubric default: 80% deposit share)
   - Tier 4: Destroyed or Missing (rubric default: 100% deposit share)
 - The Solana program computes the exact payout (`verdict_owner_bps`):
   ```
-  owner_bps = rubric_bps[worst_tier] + (extra_findings * extra_finding_bps)
+  owner_bps = rubric_bps[worst_tier] + (extra_findings * extra_finding_bps)   (capped at 100%)
   ```
   The program enforces this formula on-chain against its stored rubric configuration. The AI cannot alter the rubric or invent payout values.
-- Auto-release cap: The AI can only auto-resolve up to Tier 2 (Functional Damage) on deposits below the large-deposit threshold (default 2 SOL). Any finding at Tier 3 or Tier 4, or any large deposit, immediately routes to human reviewers.
+- Auto-release cap: A verdict can only be posted for findings up to Tier 2 (Functional Damage) on deposits at or below the large-deposit threshold (default 5 SOL), and only if the resulting share stays below the Major value. Anything above that goes to human reviewers.
 
-### 2. 24-Hour Appeal Window with a Bond
-- Once `post_verdict` records the AI findings on-chain, a 24-hour countdown starts (`appeal_window_secs`).
+### 2. Appeal Window with a Bond
+- Once `post_verdict` records the AI findings on-chain, an appeal countdown starts (`appeal_window_secs`, 24 hours by default).
 - The prompt hash and output hash are permanently stored in the dispute account for full verification.
-- Either party can appeal the verdict during this 24-hour window by depositing an appeal bond:
-  - Bond size is proportional to what the appellant stands to lose (`bond_bps` of the contested amount, with a minimum floor).
+- Either party can appeal the verdict during this window by depositing an appeal bond:
+  - Bond size is proportional to what the appellant stands to lose (`bond_bps` of the contested amount, with a minimum floor). The default values are placeholders still being tuned.
+  - An appeal that cannot improve the appellant's outcome is refused.
   - If the human reviewer adjusts the split in the appellant's favor, their bond is refunded in full.
   - If the appeal fails, the bond is forfeited to the platform protection pool (`Pool` account) to support future user guarantees.
 
 ### 3. Human Reviewers and Two-Reviewer Safeguard
-- If the 24-hour appeal window expires without an appeal, anyone can call `settle_verdict` to execute the program payout.
+- If the appeal window closes without an appeal, anyone can call `finalize_verdict` to execute the program payout.
+- If an appeal is made but no reviewer decides within the appeal expiry (7 days by default), anyone can call `expire_appeal`: the verdict stands and the bonds are returned.
 - If appealed or escalated:
   - Authorized human reviewers resolve the dispute via `reviewer_resolve`.
-  - **Two-Reviewer Rule**: Any decision that awards Major damage (Tier 3+) or involves a deposit above `two_reviewer_threshold_lamports` requires two distinct authorized reviewer signatures on the Solana transaction. A single reviewer cannot unilaterally award a large payout.
+  - **Two-Reviewer Rule**: Any decision that gives the owner at least the Major rubric share, or involves a deposit above `two_reviewer_threshold_lamports` (default 10 SOL), requires two distinct authorized reviewers to sign the same Solana transaction.
+- The admin can set an unappealed AI verdict aside (`void_verdict`); a reviewer then decides.
+
+### Where the money can go
+The program enforces that funds can only ever move to the rental's owner, the rental's renter, the platform wallet or the user-protection pool. Reviewers decide splits, but only within program limits: amounts must add up exactly to what is held, and big decisions need two reviewers. Payouts from the user-protection pool (forfeited bonds) are chosen by the admin, and the pool balance is the limit. Admin powers (Config changes and pool payouts) are planned to move to a multisig, see the roadmap.
 
 ---
 
 ## The Safety Layers
 
-Autonomous evaluation must be secure against manipulation. Grey Swan implements defense-in-depth across six distinct layers:
+Autonomous evaluation must be secure against manipulation. Grey Swan implements defense-in-depth across six layers, plus a test suite:
 
 ```
 [User Text / Questionnaire] ──► [Layer 1: Sanitizer & Heuristics] (Regex, Unicode, delimiter checks)
@@ -115,7 +125,7 @@ Autonomous evaluation must be secure against manipulation. Grey Swan implements 
                                 [Layer 5: Deterministic Code Routing] (Fail closed to HUMAN_REVIEW)
                                           │
                                           ▼
-                                [Layer 6: On-Chain Program Invariants] (Rubric math, 24h appeal, two reviewers)
+                                [Layer 6: On-Chain Program Invariants] (Rubric math, appeal window, two reviewers)
 ```
 
 1. **Untrusted Text Kept Away From Visual Models**:
@@ -123,7 +133,7 @@ Autonomous evaluation must be secure against manipulation. Grey Swan implements 
 2. **Structured Output Checked by Code**:
    Model responses are validated against strict Zod schemas with finite enums, bounded numeric arrays, and strict character limits. Unparseable, non-conforming, or hallucinatory outputs immediately fail validation.
 3. **Controlled In-App Photo Capture with Per-Phase Codes**:
-   The app provides a guided camera flow that logs capture provenance and dynamic per-phase codes into the IPFS manifest. Photos taken live during handover cannot be substituted with pre-existing camera roll pictures from months earlier.
+   Handover photos come from a guided in-app camera with a fixed shot list. The server issues a short code for each step, readable only by the two parties, which the person writes on paper and includes in the front shot. Each manifest records the shot, the code and whether a photo was captured or uploaded (upload is offered only when no camera is available). This makes reusing old photos harder and visible. It is not cryptographic proof of when a photo was taken.
 4. **Plain-Code Routing Rules That Fail Safe**:
    All decision routing is executed in deterministic TypeScript code (`route.ts`). If any rule fails:
    - Non-visual claims (e.g., "electronic motor stopped working") cannot be verified via photos
@@ -135,24 +145,24 @@ Autonomous evaluation must be secure against manipulation. Grey Swan implements 
 5. **Two Independent AI Models That Must Agree**:
    Dispute cases run through two distinct vision models across multiple evaluation runs. Both models must agree on the damaged area, the severity tier, the baseline coverage, and the confirmed identity of the physical item. Disagreement between models triggers human escalation.
 6. **Hard Limits Enforced by the Program**:
-   The Solana Anchor program enforces its own invariant constraints: deposit ceilings, maximum auto-release tiers, exact lamport conservation (payouts must sum exactly to held funds), and cryptographic verification of reviewer signatures.
-7. **Attack Test Suite**:
-   The pipeline includes automated test suites (`server/src/ai/test/attacks.test.ts`) validating resilience against 25+ prompt injection techniques, including direct instructions, delimiter escaping, base64 and hex encoding, rot13, non-English prompts (Spanish, French, German, Chinese, Russian, Arabic), zero-width characters, bidirectional overrides, full-width homoglyphs, and prompt extraction attempts. All attacks fail safe to human review without ever posting a verdict.
+   The Solana Anchor program enforces its own constraints: deposit ceilings, maximum auto-release tiers, exact lamport conservation (payouts must sum exactly to held funds), and checks that the verdict signer and reviewers are the keys named in Config.
+**Attack Test Suite**:
+The pipeline includes automated tests (`server/src/ai/test/attacks.test.ts`) covering 25 prompt injection cases, including direct instructions, delimiter escaping, base64 and hex encoding, rot13, non-English prompts (Spanish, French, German, Chinese, Russian, Arabic), zero-width characters, bidirectional overrides, full-width homoglyphs, and prompt extraction attempts. In those tests the attacks either fail safe to human review or are flagged, and no verdict is posted from them.
 
 ---
 
 ## Roadmap
 
 ### Built and Tested
-- **Anchor Program on Solana Devnet**: Core rental custody program (`2YnarssLwdKPi3Br6C6cUcAuKyyoDagXaHZWo3kykcko`) with instructions for listing, renting, four-phase handovers, return confirmation, auto-refund timeouts, AI verdict posting, appeals with bonds, and reviewer settlements. 12 passing test suites.
+- **Anchor Program on Solana Devnet**: Core rental custody program (`2YnarssLwdKPi3Br6C6cUcAuKyyoDagXaHZWo3kykcko`) with instructions for listing, renting, four-phase handovers, return confirmation, deadline timeouts, auto-refund, AI verdict posting, appeals with bonds, and reviewer settlements. 15 Rust test files under `programs/greyswan/tests`.
 - **Autonomous Dispute Pipeline**: Multi-stage inspection engine with claim extraction, blind visual passes, dual-model consensus, prompt/output SHA-256 hashing, and fail-safe routing.
-- **Adversarial Test Suite**: 25+ injection attack tests verifying that malicious inputs cannot trigger automated payouts.
-- **Web Frontend**: React + Vite + TypeScript application running on port 5174, featuring wallet sign-in, responsive light and dark themes using custom tokens, Mapbox geocoding with nearest-first local item sorting, photo upload via IPFS, and complete rental lifecycle tracking.
+- **Adversarial Test Suite**: 25 injection cases verifying that malicious inputs do not produce an automated payout.
+- **Web Frontend**: React + Vite + TypeScript application (dev server on port 5173 by default), featuring wallet sign-in, responsive light and dark themes using custom tokens, Mapbox geocoding with nearest-first local item sorting, photo upload via IPFS, and complete rental lifecycle tracking.
 
 ### Designed, Ready to Build
-- **Multisig Governance**: Integration with Squads multisig for the platform Config and Admin accounts so program parameters (rubric basis points, reviewer lists, fee rates) are managed by a multi-signature committee.
+- **Multisig Governance**: Moving the admin powers (Config changes such as rubric basis points and reviewer lists, setting a verdict aside, and user-protection pool payouts) to a Squads multisig, so no single key holds them.
 - **Background Worker**: Dedicated background queue to automatically poll on-chain dispute events, trigger the AI inspection pipeline, and sign `post_verdict` transactions without manual triggers.
-- **Email Reminders**: Automated notifications for upcoming return deadlines, courier tracking updates, and the 24-hour appeal window countdown.
+- **Email Reminders**: Automated notifications for upcoming return deadlines, courier tracking updates, and the appeal window countdown.
 - **Admin Emergency Cancellation**: On-chain instruction allowing mutual agreement cancellation if both parties abandon a rental prior to handover.
 
 ### Next
@@ -166,7 +176,7 @@ Autonomous evaluation must be secure against manipulation. Grey Swan implements 
 ### Prerequisites
 - Node.js 22 or higher (uses built-in `node:sqlite`)
 - A Solana browser wallet (Phantom or Solflare) configured for Solana Devnet
-- A [Pinata](https://pinata.cloud) account and API JWT (Files: Write scope) for real IPFS photo pinning (optional in mock mode)
+- A [Pinata](https://pinata.cloud) account and API JWT (Files: Write scope). Required: the backend exits at startup without `PINATA_JWT`.
 
 ### 1. Start the Backend Service
 The backend service handles wallet session authentication, SQLite profile storage, and server-side IPFS pinning:
@@ -174,7 +184,7 @@ The backend service handles wallet session authentication, SQLite profile storag
 ```bash
 cd server
 npm install
-cp .env.example .env   # Add PINATA_JWT if you have one
+cp .env.example .env   # Set PINATA_JWT (required)
 npm run dev            # Runs on http://localhost:8787
 ```
 
@@ -186,10 +196,10 @@ The frontend connects to Solana Devnet and proxies API calls to the local backen
 ```bash
 cd app
 npm install
-npm run dev -- --port 5174   # Runs on http://localhost:5174
+npm run dev   # Runs on http://localhost:5173
 ```
 
-Open `http://localhost:5174` in your browser and connect your Solana wallet on devnet.
+Open `http://localhost:5173` in your browser and connect your Solana wallet on devnet.
 
 ### 3. Running Anchor Tests (Optional)
 If you have the Rust and Anchor toolchain installed locally and want to run the program tests:
