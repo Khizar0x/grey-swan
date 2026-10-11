@@ -30,6 +30,10 @@ export function appealBond(params: { deposit: bigint; verdictOwnerBps: number; b
   return bond > params.bondMin ? bond : params.bondMin
 }
 
+// Exact, never rounded: this is what someone is about to sign for. Trailing
+// zeros are dropped but at least two decimals are kept ("1.50 SOL").
 export function formatLamports(lamports: bigint): string {
-  return `${(Number(lamports) / 1_000_000_000).toFixed(3)} SOL`
+  const whole = lamports / 1_000_000_000n
+  const fraction = (lamports % 1_000_000_000n).toString().padStart(9, '0').replace(/0+$/, '').padEnd(2, '0')
+  return `${whole}.${fraction} SOL`
 }
