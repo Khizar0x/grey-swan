@@ -56,3 +56,5 @@ pub const DEFAULT_BOND_MIN_LAMPORTS: u64 = 10_000_000;
 // TODO(dispute-2b): placeholder thresholds, not yet read by any instruction.
 pub const DEFAULT_LARGE_DEPOSIT_THRESHOLD_LAMPORTS: u64 = 5_000_000_000;
 pub const DEFAULT_TWO_REVIEWER_THRESHOLD_LAMPORTS: u64 = 10_000_000_000;
+
+pub const TIMELINE_SEED: &[u8] = b"timeline";

@@ -50,6 +50,7 @@ fn claim_refund(
 #[test]
 fn claim_refund_rejected_after_renter_received_item() {
     let mut svm = setup();
+    init_test_config(&mut svm);
     let (owner, renter) = (funded(&mut svm), funded(&mut svm));
     let listing = list_item(&mut svm, &owner, "Canon R5");
     let rental = rent(&mut svm, listing, &renter);
@@ -114,17 +115,19 @@ struct TwoRentals {
     listing_a: anchor_lang::prelude::Pubkey,
     rental_a: anchor_lang::prelude::Pubkey,
     listing_b: anchor_lang::prelude::Pubkey,
+    admin: solana_keypair::Keypair,
 }
 
 fn two_rentals() -> TwoRentals {
     let mut svm = setup();
+    let admin = init_test_config(&mut svm);
     let (owner_a, renter_a) = (funded(&mut svm), funded(&mut svm));
     let (owner_b, renter_b) = (funded(&mut svm), funded(&mut svm));
     let listing_a = list_item(&mut svm, &owner_a, "Canon R5");
     let listing_b = list_item(&mut svm, &owner_b, "Fender Strat");
     let rental_a = rent(&mut svm, listing_a, &renter_a);
     rent(&mut svm, listing_b, &renter_b);
-    TwoRentals { svm, owner_a, renter_a, listing_a, rental_a, listing_b }
+    TwoRentals { svm, owner_a, renter_a, listing_a, rental_a, listing_b, admin }
 }
 
 fn assert_listing_b_untouched(t: &TwoRentals) {
@@ -172,8 +175,6 @@ fn claim_refund_rejects_unrelated_listing() {
 #[test]
 fn resolve_dispute_rejects_unrelated_listing() {
     let mut t = two_rentals();
-    let admin = funded(&mut t.svm);
-    init_config(&mut t.svm, &admin);
     all_phases(&mut t.svm, t.rental_a, &t.owner_a, &t.renter_a);
     flag_return_issue(&mut t.svm, t.rental_a, &t.owner_a).unwrap();
 
@@ -185,14 +186,14 @@ fn resolve_dispute_rejects_unrelated_listing() {
                 config: config_pda(),
                 listing: t.listing_b,
                 rental: t.rental_a,
-                admin: admin.pubkey(),
+                admin: t.admin.pubkey(),
                 owner: t.owner_a.pubkey(),
                 renter: t.renter_a.pubkey(),
                 system_program: system_program::ID,
             },
         ),
-        &admin,
-        &[&admin],
+        &t.admin,
+        &[&t.admin],
     );
     assert_listing_b_untouched(&t);
     assert_program_err(result, ErrorCode::ListingMismatch);

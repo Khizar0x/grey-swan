@@ -82,4 +82,8 @@ pub enum ErrorCode {
     TooManyReviewers,
     #[msg("Reviewer list contains an empty or repeated entry")]
     InvalidReviewer,
+    #[msg("The window to confirm arrival has closed")]
+    ArrivalWindowClosed,
+    #[msg("Rental timeline account is not in the expected format")]
+    InvalidTimelineAccount,
 }

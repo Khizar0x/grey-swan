@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use crate::constants::MAX_DISPUTE_REASON_LEN;
+use crate::constants::{CONFIG_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
+use crate::instructions::handover::check_arrival_deadline;
 use crate::state::{Config, DisputeKind, HandoverPhase, Listing, Rental, RentalStatus};
 
 // ---------- Owner flags a problem after the item comes back ----------
@@ -46,6 +47,14 @@ pub fn handle_flag_return_issue(ctx: Context<FlagReturnIssue>, reason: String) -
 pub struct RejectOnArrival<'info> {
     #[account(mut)]
     pub rental: Account<'info, Rental>,
+
+    /// CHECK: may not exist (legacy rentals); see check_arrival_deadline.
+    #[account(seeds = [TIMELINE_SEED, rental.key().as_ref()], bump)]
+    pub timeline: UncheckedAccount<'info>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+
     pub renter: Signer<'info>,
 }
 
@@ -74,6 +83,7 @@ pub fn handle_reject_on_arrival(
         reason.len() <= MAX_DISPUTE_REASON_LEN,
         crate::error::ErrorCode::DisputeReasonTooLong
     );
+    check_arrival_deadline(&ctx.accounts.timeline, &ctx.accounts.config)?;
 
     let rental = &mut ctx.accounts.rental;
     rental.phase2_photos = photos;

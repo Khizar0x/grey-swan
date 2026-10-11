@@ -218,3 +218,16 @@ pub struct Rental {
     pub dispute_reason: String,
     pub disputed_at: i64,
 }
+
+// Rental is full (no spare bytes), so per-rental timestamps live in this
+// side account, seeds ["timeline", rental], created by submit_phase1.
+// Rentals shipped before this existed have no timeline and no deadlines.
+#[account]
+#[derive(InitSpace)]
+pub struct RentalTimeline {
+    pub rental: Pubkey,
+    pub shipped_at: i64,
+    pub bump: u8,
+    // Room for later phase timestamps (arrived, return shipped, returned).
+    pub reserved: [u8; 64],
+}

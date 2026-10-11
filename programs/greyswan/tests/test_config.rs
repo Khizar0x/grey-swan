@@ -16,7 +16,6 @@ use {
         solana_program::{instruction::Instruction, rent::Rent, system_program},
         Space,
     },
-    base64::Engine,
     common::*,
     greyswan::{
         error::ErrorCode,
@@ -25,10 +24,7 @@ use {
     },
     litesvm::LiteSVM,
     solana_keypair::Keypair,
-    solana_message::{Message, VersionedMessage},
-    solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction::versioned::VersionedTransaction,
     std::str::FromStr,
 };
 
@@ -38,50 +34,14 @@ fn devnet_admin() -> Pubkey {
     Pubkey::from_str(DEVNET_ADMIN).unwrap()
 }
 
-/// The fixture as (lamports, data, owner).
-fn devnet_config_fixture() -> (u64, Vec<u8>, Pubkey) {
-    let json: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/devnet_config.json")).unwrap();
-    let acct = &json["account"];
-    let data = base64::engine::general_purpose::STANDARD
-        .decode(acct["data"][0].as_str().unwrap())
-        .unwrap();
-    let owner = Pubkey::from_str(acct["owner"].as_str().unwrap()).unwrap();
-    (acct["lamports"].as_u64().unwrap(), data, owner)
-}
-
 fn svm_with_devnet_config() -> LiteSVM {
     let mut svm = LiteSVM::new().with_sigverify(false);
     svm.add_program(greyswan::id(), program_bytes()).unwrap();
     set_time(&mut svm, START_TIME);
-
-    let (lamports, data, owner) = devnet_config_fixture();
-    assert_eq!(json_pubkey(), config_pda(), "fixture is not the Config PDA");
-    svm.set_account(
-        config_pda(),
-        solana_account::Account { lamports, data, owner, executable: false, rent_epoch: u64::MAX },
-    )
-    .unwrap();
+    let address = load_fixture(&mut svm, include_str!("fixtures/devnet_config.json"));
+    assert_eq!(address, config_pda(), "fixture is not the Config PDA");
     svm.airdrop(&devnet_admin(), 10_000_000_000).unwrap();
     svm
-}
-
-fn json_pubkey() -> Pubkey {
-    let json: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/devnet_config.json")).unwrap();
-    Pubkey::from_str(json["pubkey"].as_str().unwrap()).unwrap()
-}
-
-/// Sends with placeholder signatures. Only meaningful on an svm built with
-/// sigverify off; used to act as the devnet admin, whose key we don't hold.
-fn send_as(svm: &mut LiteSVM, ix: Instruction, payer: Pubkey) -> Result<(), String> {
-    svm.expire_blockhash();
-    let msg = Message::new_with_blockhash(&[ix], Some(&payer), &svm.latest_blockhash());
-    let tx = VersionedTransaction {
-        signatures: vec![Signature::default(); msg.header.num_required_signatures as usize],
-        message: VersionedMessage::Legacy(msg),
-    };
-    svm.send_transaction(tx).map(|_| ()).map_err(|e| format!("{:?}", e.err))
 }
 
 fn migrate_ix(admin: Pubkey) -> Instruction {
@@ -181,16 +141,32 @@ fn fresh_init_config_is_already_current() {
 }
 
 #[test]
-fn resolve_dispute_works_after_migrating_real_config() {
+fn rentals_and_resolve_dispute_work_after_migrating_real_config() {
     let mut svm = svm_with_devnet_config();
     let admin = devnet_admin();
     let (owner, renter) = (funded(&mut svm), funded(&mut svm));
     let listing = list_item(&mut svm, &owner, "Canon R5");
     let rental = rent(&mut svm, listing, &renter);
-    all_phases(&mut svm, rental, &owner, &renter);
+    phase1(&mut svm, rental, &owner).unwrap();
+
+    // Before migration the legacy 41 bytes don't deserialize as the new
+    // Config, so anything reading Config (arrival, rejection, resolve) is
+    // unavailable until migrate_config runs. This is the deploy-ordering
+    // risk: migrate immediately after upgrading the program.
+    let err = phase2(&mut svm, rental, &renter).unwrap_err();
+    assert!(err.contains("Custom(3003)"), "expected AccountDidNotDeserialize, got {err}");
+
+    send_as(&mut svm, migrate_ix(admin), admin).unwrap();
+
+    phase2(&mut svm, rental, &renter).unwrap();
+    phase3(&mut svm, rental, &renter).unwrap();
+    phase4(&mut svm, rental, &owner).unwrap();
     flag_return_issue(&mut svm, rental, &owner).unwrap();
 
-    let resolve = || {
+    let renter_before = lamports(&svm, &renter.pubkey());
+    let owner_before = lamports(&svm, &owner.pubkey());
+    send_as(
+        &mut svm,
         ix(
             greyswan::instruction::ResolveDispute { owner_amount: 5_000_000, renter_amount: TOTAL_HELD - 5_000_000 },
             greyswan::accounts::ResolveDispute {
@@ -202,20 +178,10 @@ fn resolve_dispute_works_after_migrating_real_config() {
                 renter: renter.pubkey(),
                 system_program: system_program::ID,
             },
-        )
-    };
-
-    // Before migration the legacy 41 bytes don't deserialize as the new
-    // Config, so resolve_dispute is unavailable until migrate_config runs.
-    // This is the deploy-ordering risk: migrate right after upgrading.
-    let err = send_as(&mut svm, resolve(), admin).unwrap_err();
-    assert!(err.contains("Custom(3003)"), "expected AccountDidNotDeserialize, got {err}");
-
-    send_as(&mut svm, migrate_ix(admin), admin).unwrap();
-
-    let renter_before = lamports(&svm, &renter.pubkey());
-    let owner_before = lamports(&svm, &owner.pubkey());
-    send_as(&mut svm, resolve(), admin).unwrap();
+        ),
+        admin,
+    )
+    .unwrap();
     assert_eq!(lamports(&svm, &owner.pubkey()), owner_before + 5_000_000);
     assert_eq!(lamports(&svm, &renter.pubkey()), renter_before + TOTAL_HELD - 5_000_000);
     assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Resolved);

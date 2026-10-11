@@ -1,3 +1,5 @@
+mod common;
+
 use {
     anchor_lang::{
         prelude::Pubkey,
@@ -20,6 +22,7 @@ fn setup() -> LiteSVM {
         "/../deploy/greyswan.so"
     ));
     svm.add_program(program_id, bytes).unwrap();
+    common::init_test_config(&mut svm);
     svm
 }
 
@@ -182,6 +185,8 @@ fn test_remove_listing_closes_account_but_preserves_rental_history() {
                 greyswan::accounts::SubmitPhase1 {
                     rental: rental.pubkey(),
                     owner: owner.pubkey(),
+                    timeline: common::timeline_pda(&rental.pubkey()),
+                    system_program: system_program::ID,
                 }
                 .to_account_metas(None),
             ),
@@ -196,6 +201,8 @@ fn test_remove_listing_closes_account_but_preserves_rental_history() {
                 .data(),
                 greyswan::accounts::SubmitPhase2 {
                     rental: rental.pubkey(),
+                    timeline: common::timeline_pda(&rental.pubkey()),
+                    config: common::config_pda(),
                     renter: renter.pubkey(),
                 }
                 .to_account_metas(None),

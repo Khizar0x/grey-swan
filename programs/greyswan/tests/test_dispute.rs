@@ -1,3 +1,5 @@
+mod common;
+
 use {
     anchor_lang::{
         prelude::Pubkey,
@@ -48,6 +50,7 @@ fn test_flag_return_issue() {
 
     svm.airdrop(&owner.pubkey(), 1_000_000_000).unwrap();
     svm.airdrop(&renter.pubkey(), 1_000_000_000).unwrap();
+    common::init_test_config(&mut svm);
 
     let item_name = "Canon R5".to_string();
     let weekly_price: u64 = 5_000_000;
@@ -137,6 +140,8 @@ fn test_flag_return_issue() {
             greyswan::accounts::SubmitPhase1 {
                 rental: rental.pubkey(),
                 owner: owner.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
+                system_program: system_program::ID,
             }
             .to_account_metas(None),
         ),
@@ -155,6 +160,8 @@ fn test_flag_return_issue() {
             .data(),
             greyswan::accounts::SubmitPhase2 {
                 rental: rental.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
+                config: common::config_pda(),
                 renter: renter.pubkey(),
             }
             .to_account_metas(None),
@@ -242,6 +249,7 @@ fn test_reject_on_arrival() {
 
     svm.airdrop(&owner.pubkey(), 1_000_000_000).unwrap();
     svm.airdrop(&renter.pubkey(), 1_000_000_000).unwrap();
+    common::init_test_config(&mut svm);
 
     let item_name = "Canon R5".to_string();
     let (listing, _) = Pubkey::find_program_address(
@@ -306,6 +314,8 @@ fn test_reject_on_arrival() {
             .data(),
             greyswan::accounts::RejectOnArrival {
                 rental: rental.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
+                config: common::config_pda(),
                 renter: renter.pubkey(),
             }
             .to_account_metas(None),
@@ -328,6 +338,8 @@ fn test_reject_on_arrival() {
             greyswan::accounts::SubmitPhase1 {
                 rental: rental.pubkey(),
                 owner: owner.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
+                system_program: system_program::ID,
             }
             .to_account_metas(None),
         ),
@@ -350,6 +362,8 @@ fn test_reject_on_arrival() {
             .data(),
             greyswan::accounts::RejectOnArrival {
                 rental: rental.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
+                config: common::config_pda(),
                 renter: renter.pubkey(),
             }
             .to_account_metas(None),
@@ -474,6 +488,8 @@ fn test_resolve_dispute() {
             greyswan::accounts::SubmitPhase1 {
                 rental: rental.pubkey(),
                 owner: owner.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
+                system_program: system_program::ID,
             }
             .to_account_metas(None),
         ),
@@ -493,6 +509,8 @@ fn test_resolve_dispute() {
             .data(),
             greyswan::accounts::RejectOnArrival {
                 rental: rental.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
+                config: common::config_pda(),
                 renter: renter.pubkey(),
             }
             .to_account_metas(None),

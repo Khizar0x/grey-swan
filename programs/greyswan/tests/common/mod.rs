@@ -83,6 +83,10 @@ pub fn config_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"config"], &greyswan::id()).0
 }
 
+pub fn timeline_pda(rental: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"timeline", rental.as_ref()], &greyswan::id()).0
+}
+
 pub fn listing_pda(owner: &Pubkey, item_name: &str) -> Pubkey {
     Pubkey::find_program_address(&[b"listing", owner.as_ref(), item_name.as_bytes()], &greyswan::id()).0
 }
@@ -139,7 +143,12 @@ pub fn phase1(svm: &mut LiteSVM, rental: Pubkey, owner: &Keypair) -> Result<(), 
                 photos: "ipfs://QmPhase1".to_string(),
                 tracking_number: "RM123456789GB".to_string(),
             },
-            greyswan::accounts::SubmitPhase1 { rental, owner: owner.pubkey() },
+            greyswan::accounts::SubmitPhase1 {
+                rental,
+                timeline: timeline_pda(&rental),
+                owner: owner.pubkey(),
+                system_program: system_program::ID,
+            },
         ),
         owner,
         &[owner],
@@ -151,7 +160,12 @@ pub fn phase2(svm: &mut LiteSVM, rental: Pubkey, renter: &Keypair) -> Result<(),
         svm,
         ix(
             greyswan::instruction::SubmitPhase2 { photos: "ipfs://QmPhase2".to_string() },
-            greyswan::accounts::SubmitPhase2 { rental, renter: renter.pubkey() },
+            greyswan::accounts::SubmitPhase2 {
+                rental,
+                timeline: timeline_pda(&rental),
+                config: config_pda(),
+                renter: renter.pubkey(),
+            },
         ),
         renter,
         &[renter],
@@ -192,31 +206,34 @@ pub fn all_phases(svm: &mut LiteSVM, rental: Pubkey, owner: &Keypair, renter: &K
     phase4(svm, rental, owner).unwrap();
 }
 
+pub fn flag_return_issue_ix(rental: Pubkey, owner: Pubkey) -> Instruction {
+    ix(
+        greyswan::instruction::FlagReturnIssue { reason: "Lens is scratched".to_string() },
+        greyswan::accounts::FlagReturnIssue { rental, owner },
+    )
+}
+
 pub fn flag_return_issue(svm: &mut LiteSVM, rental: Pubkey, owner: &Keypair) -> Result<(), String> {
-    send(
-        svm,
-        ix(
-            greyswan::instruction::FlagReturnIssue { reason: "Lens is scratched".to_string() },
-            greyswan::accounts::FlagReturnIssue { rental, owner: owner.pubkey() },
-        ),
-        owner,
-        &[owner],
+    send(svm, flag_return_issue_ix(rental, owner.pubkey()), owner, &[owner])
+}
+
+pub fn reject_on_arrival_ix(rental: Pubkey, renter: Pubkey) -> Instruction {
+    ix(
+        greyswan::instruction::RejectOnArrival {
+            photos: "ipfs://QmArrival".to_string(),
+            reason: "Wrong item sent".to_string(),
+        },
+        greyswan::accounts::RejectOnArrival {
+            rental,
+            timeline: timeline_pda(&rental),
+            config: config_pda(),
+            renter,
+        },
     )
 }
 
 pub fn reject_on_arrival(svm: &mut LiteSVM, rental: Pubkey, renter: &Keypair) -> Result<(), String> {
-    send(
-        svm,
-        ix(
-            greyswan::instruction::RejectOnArrival {
-                photos: "ipfs://QmArrival".to_string(),
-                reason: "Wrong item sent".to_string(),
-            },
-            greyswan::accounts::RejectOnArrival { rental, renter: renter.pubkey() },
-        ),
-        renter,
-        &[renter],
-    )
+    send(svm, reject_on_arrival_ix(rental, renter.pubkey()), renter, &[renter])
 }
 
 pub fn init_config(svm: &mut LiteSVM, admin: &Keypair) {
@@ -234,6 +251,55 @@ pub fn init_config(svm: &mut LiteSVM, admin: &Keypair) {
         &[admin],
     )
     .unwrap();
+}
+
+/// Creates a Config with a throwaway admin, for tests that only need one to
+/// exist (phase 2 reads the arrival deadline from it).
+pub fn init_test_config(svm: &mut LiteSVM) -> Keypair {
+    let admin = funded(svm);
+    init_config(svm, &admin);
+    admin
+}
+
+/// Loads an account dumped with `solana account <address> --output json`
+/// and returns its address.
+pub fn load_fixture(svm: &mut LiteSVM, json: &str) -> Pubkey {
+    use {base64::Engine, std::str::FromStr};
+    let json: serde_json::Value = serde_json::from_str(json).unwrap();
+    let acct = &json["account"];
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(acct["data"][0].as_str().unwrap())
+        .unwrap();
+    let address = Pubkey::from_str(json["pubkey"].as_str().unwrap()).unwrap();
+    svm.set_account(
+        address,
+        solana_account::Account {
+            lamports: acct["lamports"].as_u64().unwrap(),
+            data,
+            owner: Pubkey::from_str(acct["owner"].as_str().unwrap()).unwrap(),
+            executable: false,
+            rent_epoch: u64::MAX,
+        },
+    )
+    .unwrap();
+    address
+}
+
+/// Sends with placeholder signatures, to act as a wallet whose private key
+/// the tests don't hold (the devnet admin, a devnet renter). Only works on
+/// an svm built with `.with_sigverify(false)`; every check inside the
+/// program still runs, only the transaction's ed25519 check is skipped.
+pub fn send_as(svm: &mut LiteSVM, ix: Instruction, payer: Pubkey) -> Result<(), String> {
+    svm.expire_blockhash();
+    let msg = Message::new_with_blockhash(&[ix], Some(&payer), &svm.latest_blockhash());
+    let tx = VersionedTransaction {
+        signatures: vec![
+            solana_signature::Signature::default();
+            msg.header.num_required_signatures as usize
+        ],
+        message: VersionedMessage::Legacy(msg),
+    };
+    svm.send_transaction(tx).map(|_| ()).map_err(|e| format!("{:?}", e.err))
 }
 
 pub fn read<T: AccountDeserialize>(svm: &LiteSVM, address: &Pubkey) -> T {
