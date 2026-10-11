@@ -178,12 +178,15 @@ export async function resolveDispute(
 ) {
   return program.methods
     .resolveDispute(ownerAmount, renterAmount)
+    // The program id means "no second reviewer". Left out, Anchor passes the
+    // connected wallet there too (see reviewerResolve below).
     .accounts({
       listing,
       rental,
       admin,
       owner,
       renter,
+      secondReviewer: program.programId,
     })
     .rpc()
 }
@@ -280,7 +283,11 @@ export async function reviewerResolve(
 ) {
   return program.methods
     .reviewerResolve(ownerBps)
-    .accounts({ listing, rental, owner, renter, reviewer })
+    // Anchor fills any unnamed signer account with the connected wallet, and
+    // second_reviewer is a signer, so left out it would be the reviewer again
+    // and the program would refuse it. An optional account is "not supplied"
+    // when its address is the program's own id.
+    .accounts({ listing, rental, owner, renter, reviewer, secondReviewer: program.programId })
     .rpc()
 }
 
