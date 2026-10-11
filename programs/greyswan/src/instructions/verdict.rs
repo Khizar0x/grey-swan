@@ -1,8 +1,10 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_BPS, MAX_VERDICT_TIERS, PLATFORM_WALLET, RUBRIC_TIERS};
+use crate::constants::{
+    CONFIG_SEED, DISPUTE_SEED, MAX_BPS, MAX_VERDICT_TIERS, PLATFORM_WALLET, POOL_SEED, RUBRIC_TIERS,
+};
 use crate::instructions::confirm_return::{bps_of, settle_rental};
-use crate::state::{Config, Dispute, DisputeKind, DisputeStatus, Listing, Rental, RentalStatus};
+use crate::state::{Config, Dispute, DisputeKind, DisputeStatus, Listing, Pool, Rental, RentalStatus};
 
 // The damage-dispute engine for ReturnIssue disputes (the owner flagged a
 // problem after getting the item back). An off-chain AI compares the
@@ -341,5 +343,152 @@ pub fn handle_void_verdict(ctx: Context<VoidVerdict>) -> Result<()> {
     );
     refund_bonds(&mut accounts.dispute, &accounts.owner.to_account_info(), &accounts.renter.to_account_info())?;
     accounts.dispute.status = DisputeStatus::Voided;
+    Ok(())
+}
+
+// ---------- A reviewer decides a damage dispute ----------
+
+/// Rubric index of the Major tier. A decision giving the owner at least
+/// rubric_bps[MAJOR_TIER] of the deposit needs two reviewers.
+const MAJOR_TIER: usize = 3;
+
+/// Checks the second reviewer when one is required (or supplied): it must
+/// be a reviewer (or the admin) and not the first reviewer. Returns the key
+/// to record, or Pubkey::default() when there is none.
+pub(crate) fn second_reviewer_key(
+    config: &Config,
+    first: &Pubkey,
+    second: Option<&Signer>,
+    required: bool,
+) -> Result<Pubkey> {
+    match second {
+        Some(second) => {
+            let key = second.key();
+            require!(
+                config.is_reviewer(&key) && key != *first,
+                crate::error::ErrorCode::SecondReviewerRequired,
+            );
+            Ok(key)
+        }
+        None => {
+            require!(!required, crate::error::ErrorCode::SecondReviewerRequired);
+            Ok(Pubkey::default())
+        }
+    }
+}
+
+#[derive(Accounts)]
+pub struct ReviewerResolve<'info> {
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+
+    // Receives any forfeited bonds.
+    #[account(mut, seeds = [POOL_SEED], bump = pool.bump)]
+    pub pool: Box<Account<'info, Pool>>,
+
+    #[account(mut)]
+    pub listing: Box<Account<'info, Listing>>,
+
+    #[account(
+        mut,
+        constraint = listing.key() == rental.listing @ crate::error::ErrorCode::ListingMismatch,
+    )]
+    pub rental: Box<Account<'info, Rental>>,
+
+    #[account(mut, seeds = [DISPUTE_SEED, rental.key().as_ref()], bump = dispute.bump)]
+    pub dispute: Box<Account<'info, Dispute>>,
+
+    /// CHECK: verified against rental.owner in the handler
+    #[account(mut)]
+    pub owner: UncheckedAccount<'info>,
+
+    /// CHECK: verified against rental.renter in the handler
+    #[account(mut)]
+    pub renter: UncheckedAccount<'info>,
+
+    /// CHECK: verified against the hardcoded PLATFORM_WALLET constant
+    #[account(mut, address = PLATFORM_WALLET)]
+    pub platform_wallet: UncheckedAccount<'info>,
+
+    pub reviewer: Signer<'info>,
+
+    // Needed for Major-tier decisions and large deposits.
+    pub second_reviewer: Option<Signer<'info>>,
+}
+
+pub fn handle_reviewer_resolve(ctx: Context<ReviewerResolve>, owner_bps: u16) -> Result<()> {
+    let accounts = ctx.accounts;
+    let config = &accounts.config;
+    let reviewer = accounts.reviewer.key();
+    require!(config.is_reviewer(&reviewer), crate::error::ErrorCode::NotReviewer);
+    require_keys_eq!(accounts.rental.owner, accounts.owner.key(), crate::error::ErrorCode::NotListingOwner);
+    require_keys_eq!(accounts.rental.renter, accounts.renter.key(), crate::error::ErrorCode::NotRenter);
+    require!(accounts.rental.status == RentalStatus::Disputed, crate::error::ErrorCode::NotDisputed);
+    require!(
+        accounts.dispute.kind == DisputeKind::ReturnIssue,
+        crate::error::ErrorCode::WrongDisputeKind,
+    );
+    // Open: the AI never posted. Appealed: a party asked for a human.
+    // Voided: the admin set the AI verdict aside. An unappealed verdict is
+    // finalize_verdict's (or void_verdict's) to handle.
+    require!(
+        matches!(
+            accounts.dispute.status,
+            DisputeStatus::Open | DisputeStatus::Appealed | DisputeStatus::Voided
+        ),
+        crate::error::ErrorCode::InvalidDisputeStatus,
+    );
+    require!(owner_bps <= MAX_BPS, crate::error::ErrorCode::BpsOutOfRange);
+
+    let needs_two = owner_bps >= config.rubric_bps[MAJOR_TIER]
+        || accounts.rental.deposit_amount > config.two_reviewer_threshold_lamports;
+    let second = second_reviewer_key(config, &reviewer, accounts.second_reviewer.as_ref(), needs_two)?;
+
+    settle_rental(
+        &mut accounts.rental,
+        &mut accounts.listing,
+        &accounts.owner.to_account_info(),
+        &accounts.renter.to_account_info(),
+        &accounts.platform_wallet.to_account_info(),
+        owner_bps,
+        RentalStatus::Resolved,
+    )?;
+
+    // An appeal that moved the outcome in the appellant's favour gets its
+    // bond back; otherwise the bond goes to the user-protection pool.
+    let ai_bps = accounts.dispute.verdict_owner_bps;
+    let owner_bond = accounts.dispute.owner_bond;
+    let renter_bond = accounts.dispute.renter_bond;
+    let owner_refund = if owner_bps > ai_bps { owner_bond } else { 0 };
+    let renter_refund = if owner_bps < ai_bps { renter_bond } else { 0 };
+    let forfeited = (owner_bond - owner_refund)
+        .checked_add(renter_bond - renter_refund)
+        .ok_or(crate::error::ErrorCode::MathOverflow)?;
+
+    let dispute_info = accounts.dispute.to_account_info();
+    for (amount, to) in [
+        (owner_refund, accounts.owner.to_account_info()),
+        (renter_refund, accounts.renter.to_account_info()),
+        (forfeited, accounts.pool.to_account_info()),
+    ] {
+        if amount > 0 {
+            **dispute_info.try_borrow_mut_lamports()? -= amount;
+            **to.try_borrow_mut_lamports()? += amount;
+        }
+    }
+    accounts.pool.total_received = accounts
+        .pool
+        .total_received
+        .checked_add(forfeited)
+        .ok_or(crate::error::ErrorCode::MathOverflow)?;
+
+    let dispute = &mut accounts.dispute;
+    dispute.owner_bond = 0;
+    dispute.renter_bond = 0;
+    dispute.status = DisputeStatus::Resolved;
+    dispute.final_owner_bps = owner_bps;
+    dispute.resolved_by = [reviewer, second];
+    dispute.resolved_at = Clock::get()?.unix_timestamp;
+
     Ok(())
 }

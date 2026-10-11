@@ -182,6 +182,10 @@ pub mod greyswan {
         crate::instructions::verdict::handle_void_verdict(ctx)
     }
 
+    pub fn reviewer_resolve(ctx: Context<ReviewerResolve>, owner_bps: u16) -> Result<()> {
+        crate::instructions::verdict::handle_reviewer_resolve(ctx, owner_bps)
+    }
+
     pub fn resolve_dispute(
         ctx: Context<ResolveDispute>,
         owner_amount: u64,

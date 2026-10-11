@@ -12,7 +12,7 @@ use {
     greyswan::{
         error::ErrorCode,
         instructions::ConfigUpdate,
-        state::{Dispute, DisputeKind, DisputeStatus, Listing, Pool, Rental, RentalStatus},
+        state::{Dispute, DisputeStatus, Listing, Pool, Rental, RentalStatus},
     },
     litesvm::LiteSVM,
     solana_keypair::Keypair,
@@ -691,4 +691,274 @@ fn void_rejects_substituted_owner_or_renter() {
     let mut bad = void_ix(&c, c.admin.pubkey());
     bad.accounts[4].pubkey = stranger;
     assert_program_err(send(&mut svm, bad, &c.admin, &[&c.admin]), ErrorCode::NotRenter);
+}
+
+// ---------- reviewer_resolve ----------
+
+struct ResolveAccounts {
+    listing: Pubkey,
+    rental: Pubkey,
+    owner: Pubkey,
+    renter: Pubkey,
+    platform_wallet: Pubkey,
+}
+
+impl ResolveAccounts {
+    fn of(c: &Case) -> Self {
+        Self {
+            listing: c.listing,
+            rental: c.rental,
+            owner: c.owner.pubkey(),
+            renter: c.renter.pubkey(),
+            platform_wallet: greyswan::PLATFORM_WALLET,
+        }
+    }
+}
+
+fn resolve_ix(a: &ResolveAccounts, reviewer: Pubkey, second: Option<Pubkey>, owner_bps: u16) -> Instruction {
+    ix(
+        greyswan::instruction::ReviewerResolve { owner_bps },
+        greyswan::accounts::ReviewerResolve {
+            config: config_pda(),
+            pool: pool_pda(),
+            listing: a.listing,
+            rental: a.rental,
+            dispute: dispute_pda(&a.rental),
+            owner: a.owner,
+            renter: a.renter,
+            platform_wallet: a.platform_wallet,
+            reviewer,
+            second_reviewer: second,
+        },
+    )
+}
+
+fn resolve(svm: &mut LiteSVM, c: &Case, reviewer: &Keypair, second: Option<&Keypair>, owner_bps: u16) -> Result<(), String> {
+    let ix = resolve_ix(&ResolveAccounts::of(c), reviewer.pubkey(), second.map(|s| s.pubkey()), owner_bps);
+    match second {
+        Some(second) => send(svm, ix, reviewer, &[reviewer, second]),
+        None => send(svm, ix, reviewer, &[reviewer]),
+    }
+}
+
+fn pool_balance(svm: &LiteSVM) -> u64 {
+    lamports(svm, &pool_pda())
+}
+
+#[test]
+fn reviewer_decides_when_the_ai_never_posted() {
+    let (mut svm, c) = flagged();
+    let before = balances(&svm, &c);
+    // 5000 bps is below Major (8000), so one reviewer is enough.
+    resolve(&mut svm, &c, &c.reviewer, None, 5_000).unwrap();
+
+    let owner_deposit = DEPOSIT / 2;
+    assert_eq!(
+        moved(before, balances(&svm, &c)),
+        [
+            (RENTAL_FEE - PLATFORM_FEE + owner_deposit) as i128,
+            (DEPOSIT - owner_deposit) as i128,
+            PLATFORM_FEE as i128,
+            -(TOTAL_HELD as i128),
+        ]
+    );
+    assert_eq!(rental_state(&svm, &c.rental).status, RentalStatus::Resolved);
+    assert!(read::<Listing>(&svm, &c.listing).is_available);
+    let d = dispute(&svm, &c.rental);
+    assert_eq!(d.status, DisputeStatus::Resolved);
+    assert_eq!(d.final_owner_bps, 5_000);
+    assert_eq!(d.resolved_by, [c.reviewer.pubkey(), Pubkey::default()]);
+    assert_eq!(d.resolved_at, START_TIME);
+
+    // Resolved: no verdict can be posted on it any more.
+    assert_program_err(post(&mut svm, c.rental, &c.verdict, &[1]), ErrorCode::NotDisputed);
+    assert_program_err(resolve(&mut svm, &c, &c.reviewer, None, 0), ErrorCode::NotDisputed);
+}
+
+#[test]
+fn admin_counts_as_a_reviewer_and_works_while_paused() {
+    let (mut svm, c) = flagged();
+    configure(&mut svm, &c.admin, ConfigUpdate { paused: Some(true), ..Default::default() });
+    resolve(&mut svm, &c, &c.admin, None, 0).unwrap();
+    assert_eq!(dispute(&svm, &c.rental).resolved_by[0], c.admin.pubkey());
+}
+
+#[test]
+fn only_reviewers_can_resolve() {
+    let (mut svm, c) = flagged();
+    let stranger = funded(&mut svm);
+    for signer in [&c.owner, &c.renter, &c.verdict, &stranger] {
+        assert_program_err(resolve(&mut svm, &c, signer, None, 0), ErrorCode::NotReviewer);
+    }
+    // A non-reviewer can't act as the second signer either.
+    assert_program_err(resolve(&mut svm, &c, &c.reviewer, Some(&stranger), 9_000), ErrorCode::SecondReviewerRequired);
+    assert_eq!(dispute(&svm, &c.rental).status, DisputeStatus::Open);
+}
+
+#[test]
+fn major_decisions_need_a_second_different_reviewer() {
+    let (mut svm, c) = flagged();
+    // Exactly at Major (rubric_bps[3] = 8000).
+    assert_program_err(resolve(&mut svm, &c, &c.reviewer, None, 8_000), ErrorCode::SecondReviewerRequired);
+    // The same reviewer named twice (one signature covers both slots).
+    let same = resolve_ix(&ResolveAccounts::of(&c), c.reviewer.pubkey(), Some(c.reviewer.pubkey()), 8_000);
+    assert_program_err(send(&mut svm, same, &c.reviewer, &[&c.reviewer]), ErrorCode::SecondReviewerRequired);
+    resolve(&mut svm, &c, &c.reviewer, Some(&c.reviewer2), 8_000).unwrap();
+    assert_eq!(dispute(&svm, &c.rental).resolved_by, [c.reviewer.pubkey(), c.reviewer2.pubkey()]);
+
+    // Just below Major: one reviewer is enough.
+    let (mut svm, c) = flagged();
+    resolve(&mut svm, &c, &c.reviewer, None, 7_999).unwrap();
+}
+
+#[test]
+fn large_deposits_need_a_second_reviewer() {
+    let (mut svm, c) = flagged();
+    configure(&mut svm, &c.admin, ConfigUpdate { two_reviewer_threshold_lamports: Some(DEPOSIT - 1), ..Default::default() });
+    assert_program_err(resolve(&mut svm, &c, &c.reviewer, None, 0), ErrorCode::SecondReviewerRequired);
+    resolve(&mut svm, &c, &c.reviewer, Some(&c.admin), 0).unwrap();
+
+    // At the threshold exactly, one reviewer is enough.
+    let (mut svm, c) = flagged();
+    configure(&mut svm, &c.admin, ConfigUpdate { two_reviewer_threshold_lamports: Some(DEPOSIT), ..Default::default() });
+    resolve(&mut svm, &c, &c.reviewer, None, 0).unwrap();
+}
+
+#[test]
+fn reviewer_resolve_rejects_bad_bps_wrong_kind_and_wrong_stage() {
+    let (mut svm, c) = flagged();
+    assert_program_err(resolve(&mut svm, &c, &c.reviewer, Some(&c.reviewer2), 10_001), ErrorCode::BpsOutOfRange);
+
+    // An unappealed verdict is finalize's (or void's) to handle.
+    post(&mut svm, c.rental, &c.verdict, &[1]).unwrap();
+    assert_program_err(resolve(&mut svm, &c, &c.reviewer, None, 0), ErrorCode::InvalidDisputeStatus);
+
+    // Other dispute kinds go through resolve_dispute.
+    let listing = list_item(&mut svm, &c.owner, "Fender Strat");
+    let arrival = rent(&mut svm, listing, &c.renter);
+    phase1(&mut svm, arrival, &c.owner).unwrap();
+    reject_on_arrival(&mut svm, arrival, &c.renter).unwrap();
+    let mut a = ResolveAccounts::of(&c);
+    a.listing = listing;
+    a.rental = arrival;
+    let result = send(&mut svm, resolve_ix(&a, c.reviewer.pubkey(), None, 0), &c.reviewer, &[&c.reviewer]);
+    assert_program_err(result, ErrorCode::WrongDisputeKind);
+}
+
+#[test]
+fn reviewer_resolves_a_voided_verdict() {
+    let (mut svm, c) = verdict_posted();
+    void(&mut svm, &c, &c.admin).unwrap();
+    resolve(&mut svm, &c, &c.reviewer, None, 1_000).unwrap();
+    assert_eq!(dispute(&svm, &c.rental).final_owner_bps, 1_000);
+}
+
+#[test]
+fn reviewer_resolve_rejects_substituted_accounts() {
+    let (mut svm, c) = flagged();
+    let stranger = Pubkey::new_unique();
+    let other_listing = list_item(&mut svm, &c.owner, "Fender Strat");
+    let try_with = |svm: &mut LiteSVM, a: ResolveAccounts| {
+        send(svm, resolve_ix(&a, c.reviewer.pubkey(), None, 0), &c.reviewer, &[&c.reviewer])
+    };
+    let mut a = ResolveAccounts::of(&c);
+    a.owner = stranger;
+    assert_program_err(try_with(&mut svm, a), ErrorCode::NotListingOwner);
+    let mut a = ResolveAccounts::of(&c);
+    a.renter = stranger;
+    assert_program_err(try_with(&mut svm, a), ErrorCode::NotRenter);
+    let mut a = ResolveAccounts::of(&c);
+    a.listing = other_listing;
+    assert_program_err(try_with(&mut svm, a), ErrorCode::ListingMismatch);
+    let mut a = ResolveAccounts::of(&c);
+    a.platform_wallet = stranger;
+    let err = try_with(&mut svm, a).unwrap_err();
+    assert!(err.contains("Custom(2012)"), "{err}");
+    assert_eq!(dispute(&svm, &c.rental).status, DisputeStatus::Open);
+}
+
+// Bonds. The AI verdict is 2000 bps; each bond is the 10,000,000 minimum.
+
+#[test]
+fn renter_bond_refunded_when_the_reviewer_lowers_the_owner_share() {
+    let (mut svm, c) = verdict_posted();
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+    let renter_before = lamports(&svm, &c.renter.pubkey());
+    let pool_before = pool_balance(&svm);
+    resolve(&mut svm, &c, &c.reviewer, None, 1_000).unwrap();
+    let renter_deposit = DEPOSIT - DEPOSIT / 10;
+    assert_eq!(lamports(&svm, &c.renter.pubkey()), renter_before + renter_deposit + DEFAULT_BOND_MIN);
+    assert_eq!(pool_balance(&svm), pool_before);
+    assert_eq!(dispute(&svm, &c.rental).renter_bond, 0);
+}
+
+#[test]
+fn renter_bond_forfeited_when_the_owner_share_stays_or_rises() {
+    for final_bps in [VERDICT_BPS, 3_000] {
+        let (mut svm, c) = verdict_posted();
+        appeal(&mut svm, c.rental, &c.renter).unwrap();
+        let renter_before = lamports(&svm, &c.renter.pubkey());
+        let pool_before = pool_balance(&svm);
+        let dispute_before = lamports(&svm, &dispute_pda(&c.rental));
+        resolve(&mut svm, &c, &c.reviewer, None, final_bps).unwrap();
+        let owner_deposit = DEPOSIT / 10_000 * final_bps as u64;
+        assert_eq!(lamports(&svm, &c.renter.pubkey()), renter_before + DEPOSIT - owner_deposit);
+        assert_eq!(pool_balance(&svm), pool_before + DEFAULT_BOND_MIN);
+        assert_eq!(lamports(&svm, &dispute_pda(&c.rental)), dispute_before - DEFAULT_BOND_MIN);
+        assert_eq!(read::<Pool>(&svm, &pool_pda()).total_received, DEFAULT_BOND_MIN);
+    }
+}
+
+#[test]
+fn owner_bond_refunded_when_the_reviewer_raises_the_owner_share() {
+    let (mut svm, c) = verdict_posted();
+    appeal(&mut svm, c.rental, &c.owner).unwrap();
+    let owner_before = lamports(&svm, &c.owner.pubkey());
+    let pool_before = pool_balance(&svm);
+    resolve(&mut svm, &c, &c.reviewer, None, 3_000).unwrap();
+    let owner_gets = RENTAL_FEE - PLATFORM_FEE + DEPOSIT / 10 * 3;
+    assert_eq!(lamports(&svm, &c.owner.pubkey()), owner_before + owner_gets + DEFAULT_BOND_MIN);
+    assert_eq!(pool_balance(&svm), pool_before);
+}
+
+#[test]
+fn owner_bond_forfeited_when_the_owner_share_stays_or_falls() {
+    for final_bps in [VERDICT_BPS, 1_000] {
+        let (mut svm, c) = verdict_posted();
+        appeal(&mut svm, c.rental, &c.owner).unwrap();
+        let pool_before = pool_balance(&svm);
+        resolve(&mut svm, &c, &c.reviewer, None, final_bps).unwrap();
+        assert_eq!(pool_balance(&svm), pool_before + DEFAULT_BOND_MIN);
+    }
+}
+
+#[test]
+fn both_bonds_split_by_outcome_and_the_pool_can_pay_a_user() {
+    let (mut svm, c) = verdict_posted();
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+    appeal(&mut svm, c.rental, &c.owner).unwrap();
+    let pool_before = pool_balance(&svm);
+    // Lower than the AI: the renter was right, the owner wasn't.
+    resolve(&mut svm, &c, &c.reviewer, None, 500).unwrap();
+    assert_eq!(pool_balance(&svm), pool_before + DEFAULT_BOND_MIN);
+
+    // The admin compensates someone from the forfeited bond.
+    let user = Pubkey::new_unique();
+    send(
+        &mut svm,
+        ix(
+            greyswan::instruction::WithdrawPool { amount: DEFAULT_BOND_MIN },
+            greyswan::accounts::WithdrawPool {
+                config: config_pda(),
+                pool: pool_pda(),
+                recipient: user,
+                admin: c.admin.pubkey(),
+            },
+        ),
+        &c.admin,
+        &[&c.admin],
+    )
+    .unwrap();
+    assert_eq!(lamports(&svm, &user), DEFAULT_BOND_MIN);
+    assert_eq!(pool_balance(&svm), pool_before);
 }
