@@ -100,8 +100,37 @@
           "writable": true
         },
         {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "owner",
+          "writable": true,
           "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -340,6 +369,53 @@
       ]
     },
     {
+      "name": "migrate_config",
+      "discriminator": [
+        92,
+        131,
+        58,
+        105,
+        210,
+        154,
+        224,
+        193
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "checks owner, discriminator, length, bump and admin before writing."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "reject_on_arrival",
       "discriminator": [
         220,
@@ -357,8 +433,79 @@
           "writable": true
         },
         {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "renter",
+          "writable": true,
           "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -521,8 +668,38 @@
           "writable": true
         },
         {
+          "name": "timeline",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "owner",
+          "writable": true,
           "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -552,6 +729,48 @@
         {
           "name": "rental",
           "writable": true
+        },
+        {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "renter",
@@ -624,6 +843,57 @@
         {
           "name": "photos",
           "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "update_config",
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "update",
+          "type": {
+            "defined": {
+              "name": "ConfigUpdate"
+            }
+          }
         }
       ]
     },
@@ -702,6 +972,19 @@
       ]
     },
     {
+      "name": "Dispute",
+      "discriminator": [
+        36,
+        49,
+        241,
+        67,
+        40,
+        36,
+        241,
+        74
+      ]
+    },
+    {
       "name": "Listing",
       "discriminator": [
         218,
@@ -725,6 +1008,19 @@
         50,
         143,
         184
+      ]
+    },
+    {
+      "name": "RentalTimeline",
+      "discriminator": [
+        240,
+        3,
+        10,
+        31,
+        211,
+        5,
+        100,
+        37
       ]
     }
   ],
@@ -868,6 +1164,76 @@
       "code": 6027,
       "name": "ResolutionAmountMismatch",
       "msg": "The resolution amounts must equal the total funds held"
+    },
+    {
+      "code": 6028,
+      "name": "OwnerAlreadyShipped",
+      "msg": "A refund is only available if the item was never sent"
+    },
+    {
+      "code": 6029,
+      "name": "ListingMismatch",
+      "msg": "This listing does not belong to this rental"
+    },
+    {
+      "code": 6030,
+      "name": "ConfigAlreadyMigrated",
+      "msg": "Settings have already been upgraded"
+    },
+    {
+      "code": 6031,
+      "name": "ConfigNotMigrated",
+      "msg": "Settings must be upgraded before this can be used"
+    },
+    {
+      "code": 6032,
+      "name": "InvalidConfigAccount",
+      "msg": "Settings account is not in the expected format"
+    },
+    {
+      "code": 6033,
+      "name": "BpsOutOfRange",
+      "msg": "Basis point values cannot exceed 10000"
+    },
+    {
+      "code": 6034,
+      "name": "RubricNotAscending",
+      "msg": "Damage tier percentages must be in ascending order"
+    },
+    {
+      "code": 6035,
+      "name": "InvalidTier",
+      "msg": "Tier must be between 0 and 4"
+    },
+    {
+      "code": 6036,
+      "name": "AppealWindowTooShort",
+      "msg": "The appeal window cannot be shorter than 24 hours"
+    },
+    {
+      "code": 6037,
+      "name": "InvalidDuration",
+      "msg": "Duration is outside the allowed range"
+    },
+    {
+      "code": 6038,
+      "name": "TooManyReviewers",
+      "msg": "No more than 10 reviewers are allowed"
+    },
+    {
+      "code": 6039,
+      "name": "InvalidReviewer",
+      "msg": "Reviewer list contains an empty or repeated entry"
+    },
+    {
+      "code": 6040,
+      "name": "ArrivalWindowClosed",
+      "msg": "The window to confirm arrival has closed"
+    },
+    {
+      "code": 6041,
+      "name": "InvalidTimelineAccount",
+      "msg": "Rental timeline account is not in the expected format"
     }
   ],
   "types": [
@@ -924,6 +1290,184 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "verdict_key",
+            "type": "pubkey"
+          },
+          {
+            "name": "reviewer_count",
+            "type": "u8"
+          },
+          {
+            "name": "reviewers",
+            "type": {
+              "array": [
+                "pubkey",
+                10
+              ]
+            }
+          },
+          {
+            "name": "rubric_bps",
+            "type": {
+              "array": [
+                "u16",
+                5
+              ]
+            }
+          },
+          {
+            "name": "extra_finding_bps",
+            "type": "u16"
+          },
+          {
+            "name": "auto_release_max_tier",
+            "type": "u8"
+          },
+          {
+            "name": "appeal_window_secs",
+            "type": "i64"
+          },
+          {
+            "name": "appeal_expiry_secs",
+            "type": "i64"
+          },
+          {
+            "name": "phase2_deadline_secs",
+            "type": "i64"
+          },
+          {
+            "name": "bond_bps",
+            "type": "u16"
+          },
+          {
+            "name": "bond_min_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "large_deposit_threshold_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "two_reviewer_threshold_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigUpdate",
+      "docs": [
+        "Each field left as None keeps its current value."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "paused",
+            "type": {
+              "option": "bool"
+            }
+          },
+          {
+            "name": "verdict_key",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "reviewers",
+            "docs": [
+              "Replaces the whole reviewer list."
+            ],
+            "type": {
+              "option": {
+                "vec": "pubkey"
+              }
+            }
+          },
+          {
+            "name": "rubric_bps",
+            "type": {
+              "option": {
+                "array": [
+                  "u16",
+                  5
+                ]
+              }
+            }
+          },
+          {
+            "name": "extra_finding_bps",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "auto_release_max_tier",
+            "type": {
+              "option": "u8"
+            }
+          },
+          {
+            "name": "appeal_window_secs",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "appeal_expiry_secs",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "phase2_deadline_secs",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "bond_bps",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "bond_min_lamports",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "large_deposit_threshold_lamports",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "two_reviewer_threshold_lamports",
+            "type": {
+              "option": "u64"
+            }
           }
         ]
       }
@@ -945,6 +1489,51 @@
       }
     },
     {
+      "name": "Dispute",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rental",
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "type": {
+              "defined": {
+                "name": "DisputeKind"
+              }
+            }
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "DisputeStatus"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                384
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "DisputeKind",
       "type": {
         "kind": "enum",
@@ -957,6 +1546,17 @@
           },
           {
             "name": "ArrivalIssue"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisputeStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
           }
         ]
       }
@@ -1182,6 +1782,35 @@
           },
           {
             "name": "Resolved"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RentalTimeline",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rental",
+            "type": "pubkey"
+          },
+          {
+            "name": "shipped_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
           }
         ]
       }

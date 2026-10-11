@@ -106,8 +106,37 @@ export type Greyswan = {
           "writable": true
         },
         {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "owner",
+          "writable": true,
           "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -346,6 +375,53 @@ export type Greyswan = {
       ]
     },
     {
+      "name": "migrateConfig",
+      "discriminator": [
+        92,
+        131,
+        58,
+        105,
+        210,
+        154,
+        224,
+        193
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "checks owner, discriminator, length, bump and admin before writing."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "rejectOnArrival",
       "discriminator": [
         220,
@@ -363,8 +439,79 @@ export type Greyswan = {
           "writable": true
         },
         {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "renter",
+          "writable": true,
           "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -527,8 +674,38 @@ export type Greyswan = {
           "writable": true
         },
         {
+          "name": "timeline",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "owner",
+          "writable": true,
           "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -558,6 +735,48 @@ export type Greyswan = {
         {
           "name": "rental",
           "writable": true
+        },
+        {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "renter",
@@ -630,6 +849,57 @@ export type Greyswan = {
         {
           "name": "photos",
           "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "updateConfig",
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "update",
+          "type": {
+            "defined": {
+              "name": "configUpdate"
+            }
+          }
         }
       ]
     },
@@ -708,6 +978,19 @@ export type Greyswan = {
       ]
     },
     {
+      "name": "dispute",
+      "discriminator": [
+        36,
+        49,
+        241,
+        67,
+        40,
+        36,
+        241,
+        74
+      ]
+    },
+    {
       "name": "listing",
       "discriminator": [
         218,
@@ -731,6 +1014,19 @@ export type Greyswan = {
         50,
         143,
         184
+      ]
+    },
+    {
+      "name": "rentalTimeline",
+      "discriminator": [
+        240,
+        3,
+        10,
+        31,
+        211,
+        5,
+        100,
+        37
       ]
     }
   ],
@@ -874,6 +1170,76 @@ export type Greyswan = {
       "code": 6027,
       "name": "resolutionAmountMismatch",
       "msg": "The resolution amounts must equal the total funds held"
+    },
+    {
+      "code": 6028,
+      "name": "ownerAlreadyShipped",
+      "msg": "A refund is only available if the item was never sent"
+    },
+    {
+      "code": 6029,
+      "name": "listingMismatch",
+      "msg": "This listing does not belong to this rental"
+    },
+    {
+      "code": 6030,
+      "name": "configAlreadyMigrated",
+      "msg": "Settings have already been upgraded"
+    },
+    {
+      "code": 6031,
+      "name": "configNotMigrated",
+      "msg": "Settings must be upgraded before this can be used"
+    },
+    {
+      "code": 6032,
+      "name": "invalidConfigAccount",
+      "msg": "Settings account is not in the expected format"
+    },
+    {
+      "code": 6033,
+      "name": "bpsOutOfRange",
+      "msg": "Basis point values cannot exceed 10000"
+    },
+    {
+      "code": 6034,
+      "name": "rubricNotAscending",
+      "msg": "Damage tier percentages must be in ascending order"
+    },
+    {
+      "code": 6035,
+      "name": "invalidTier",
+      "msg": "Tier must be between 0 and 4"
+    },
+    {
+      "code": 6036,
+      "name": "appealWindowTooShort",
+      "msg": "The appeal window cannot be shorter than 24 hours"
+    },
+    {
+      "code": 6037,
+      "name": "invalidDuration",
+      "msg": "Duration is outside the allowed range"
+    },
+    {
+      "code": 6038,
+      "name": "tooManyReviewers",
+      "msg": "No more than 10 reviewers are allowed"
+    },
+    {
+      "code": 6039,
+      "name": "invalidReviewer",
+      "msg": "Reviewer list contains an empty or repeated entry"
+    },
+    {
+      "code": 6040,
+      "name": "arrivalWindowClosed",
+      "msg": "The window to confirm arrival has closed"
+    },
+    {
+      "code": 6041,
+      "name": "invalidTimelineAccount",
+      "msg": "Rental timeline account is not in the expected format"
     }
   ],
   "types": [
@@ -930,6 +1296,184 @@ export type Greyswan = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "verdictKey",
+            "type": "pubkey"
+          },
+          {
+            "name": "reviewerCount",
+            "type": "u8"
+          },
+          {
+            "name": "reviewers",
+            "type": {
+              "array": [
+                "pubkey",
+                10
+              ]
+            }
+          },
+          {
+            "name": "rubricBps",
+            "type": {
+              "array": [
+                "u16",
+                5
+              ]
+            }
+          },
+          {
+            "name": "extraFindingBps",
+            "type": "u16"
+          },
+          {
+            "name": "autoReleaseMaxTier",
+            "type": "u8"
+          },
+          {
+            "name": "appealWindowSecs",
+            "type": "i64"
+          },
+          {
+            "name": "appealExpirySecs",
+            "type": "i64"
+          },
+          {
+            "name": "phase2DeadlineSecs",
+            "type": "i64"
+          },
+          {
+            "name": "bondBps",
+            "type": "u16"
+          },
+          {
+            "name": "bondMinLamports",
+            "type": "u64"
+          },
+          {
+            "name": "largeDepositThresholdLamports",
+            "type": "u64"
+          },
+          {
+            "name": "twoReviewerThresholdLamports",
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "configUpdate",
+      "docs": [
+        "Each field left as None keeps its current value."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "paused",
+            "type": {
+              "option": "bool"
+            }
+          },
+          {
+            "name": "verdictKey",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "reviewers",
+            "docs": [
+              "Replaces the whole reviewer list."
+            ],
+            "type": {
+              "option": {
+                "vec": "pubkey"
+              }
+            }
+          },
+          {
+            "name": "rubricBps",
+            "type": {
+              "option": {
+                "array": [
+                  "u16",
+                  5
+                ]
+              }
+            }
+          },
+          {
+            "name": "extraFindingBps",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "autoReleaseMaxTier",
+            "type": {
+              "option": "u8"
+            }
+          },
+          {
+            "name": "appealWindowSecs",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "appealExpirySecs",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "phase2DeadlineSecs",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "bondBps",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "bondMinLamports",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "largeDepositThresholdLamports",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "twoReviewerThresholdLamports",
+            "type": {
+              "option": "u64"
+            }
           }
         ]
       }
@@ -951,6 +1495,51 @@ export type Greyswan = {
       }
     },
     {
+      "name": "dispute",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rental",
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "type": {
+              "defined": {
+                "name": "disputeKind"
+              }
+            }
+          },
+          {
+            "name": "openedAt",
+            "type": "i64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "disputeStatus"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                384
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "disputeKind",
       "type": {
         "kind": "enum",
@@ -963,6 +1552,17 @@ export type Greyswan = {
           },
           {
             "name": "arrivalIssue"
+          }
+        ]
+      }
+    },
+    {
+      "name": "disputeStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "open"
           }
         ]
       }
@@ -1188,6 +1788,35 @@ export type Greyswan = {
           },
           {
             "name": "resolved"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rentalTimeline",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rental",
+            "type": "pubkey"
+          },
+          {
+            "name": "shippedAt",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
           }
         ]
       }
