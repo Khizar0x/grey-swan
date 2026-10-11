@@ -41,7 +41,12 @@ fn flag_return_issue_opens_dispute_paid_by_owner() {
     assert_eq!(dispute.kind, DisputeKind::ReturnIssue);
     assert_eq!(dispute.opened_at, START_TIME + 100);
     assert_eq!(dispute.status, DisputeStatus::Open);
-    assert_eq!(dispute.reserved, [0u8; 384]);
+    // Verdict, appeal and outcome fields all start empty.
+    assert_eq!(dispute.tier_count, 0);
+    assert_eq!(dispute.verdict_posted_at, 0);
+    assert_eq!(dispute.owner_bond + dispute.renter_bond, 0);
+    assert_eq!(dispute.resolved_by, [Pubkey::default(); 2]);
+    assert_eq!(dispute.reserved, [0u8; 193]);
     assert_eq!(lamports(&svm, &owner.pubkey()), owner_before - dispute_rent() - 5000);
 
     // Existing behaviour on the rental itself is unchanged.

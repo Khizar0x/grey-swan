@@ -112,6 +112,26 @@ pub fn dispute_pda(rental: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"dispute", rental.as_ref()], &greyswan::id()).0
 }
 
+pub fn pool_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"pool"], &greyswan::id()).0
+}
+
+pub fn init_pool_ix(admin: Pubkey) -> Instruction {
+    ix(
+        greyswan::instruction::InitPool {},
+        greyswan::accounts::InitPool {
+            config: config_pda(),
+            pool: pool_pda(),
+            admin,
+            system_program: system_program::ID,
+        },
+    )
+}
+
+pub fn init_pool(svm: &mut LiteSVM, admin: &Keypair) {
+    send(svm, init_pool_ix(admin.pubkey()), admin, &[admin]).unwrap();
+}
+
 pub fn listing_pda(owner: &Pubkey, item_name: &str) -> Pubkey {
     Pubkey::find_program_address(&[b"listing", owner.as_ref(), item_name.as_bytes()], &greyswan::id()).0
 }

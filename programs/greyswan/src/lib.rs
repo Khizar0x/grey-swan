@@ -35,6 +35,14 @@ pub mod greyswan {
         crate::instructions::update_config::handle_update_config(ctx, update)
     }
 
+    pub fn init_pool(ctx: Context<InitPool>) -> Result<()> {
+        crate::instructions::pool::handle_init_pool(ctx)
+    }
+
+    pub fn withdraw_pool(ctx: Context<WithdrawPool>, amount: u64) -> Result<()> {
+        crate::instructions::pool::handle_withdraw_pool(ctx, amount)
+    }
+
     pub fn list_item(
         ctx: Context<ListItem>,
         item_name: String,

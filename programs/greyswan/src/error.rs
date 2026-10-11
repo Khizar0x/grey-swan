@@ -96,4 +96,36 @@ pub enum ErrorCode {
     InspectionWindowStillOpen,
     #[msg("The window to check the returned item has closed")]
     InspectionWindowClosed,
+    #[msg("Damage decisions are paused")]
+    DisputesPaused,
+    #[msg("Only the damage review service can post this")]
+    NotVerdictKey,
+    #[msg("Only a reviewer can decide this")]
+    NotReviewer,
+    #[msg("This step doesn't apply to this kind of issue")]
+    WrongDisputeKind,
+    #[msg("This issue is not at a stage where this can be done")]
+    InvalidDisputeStatus,
+    #[msg("A decision needs between 1 and 8 findings")]
+    InvalidTierCount,
+    #[msg("Each finding's tier must be between 0 and 4")]
+    TierOutOfRange,
+    #[msg("This issue needs a human reviewer")]
+    NeedsHumanReview,
+    #[msg("The window to appeal has closed")]
+    AppealWindowClosed,
+    #[msg("You have already appealed this decision")]
+    AlreadyAppealed,
+    #[msg("Only the owner or renter can appeal")]
+    NotRentalParty,
+    #[msg("The window to appeal is still open")]
+    AppealWindowStillOpen,
+    #[msg("The appeal is still within its review period")]
+    AppealNotExpired,
+    #[msg("This decision needs a second, different reviewer")]
+    SecondReviewerRequired,
+    #[msg("The user protection pool doesn't hold enough for this")]
+    PoolBalanceTooLow,
+    #[msg("The owner and renter are the same wallet")]
+    SameOwnerAndRenter,
 }

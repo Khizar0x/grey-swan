@@ -133,6 +133,12 @@ impl Config {
         );
         Ok(())
     }
+
+    /// The admin, or one of the active reviewers.
+    pub fn is_reviewer(&self, key: &Pubkey) -> bool {
+        let count = (self.reviewer_count as usize).min(MAX_REVIEWERS);
+        *key == self.admin || self.reviewers[..count].contains(key)
+    }
 }
 
 // New variants must always be appended after the existing ones, never
@@ -271,11 +277,19 @@ pub struct RentalTimeline {
     pub reserved: [u8; 16],
 }
 
-// Only `Open` for now. New variants must be appended, never reordered (same
-// reason as Category above).
+// New variants must be appended, never reordered (same reason as Category
+// above).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
 pub enum DisputeStatus {
+    // Waiting for a verdict (ReturnIssue) or a reviewer (every other kind).
     Open,
+    // AI verdict posted; the appeal window is running.
+    VerdictPosted,
+    // At least one party appealed; waiting for a reviewer.
+    Appealed,
+    Resolved,
+    // The admin set the AI verdict aside; waiting for a reviewer.
+    Voided,
 }
 
 // One per disputed rental, seeds ["dispute", rental], created by
@@ -290,6 +304,45 @@ pub struct Dispute {
     pub opened_at: i64,
     pub status: DisputeStatus,
     pub bump: u8,
-    // Room for the verdict, appeal, bond and reviewer fields (dispute-2b).
-    pub reserved: [u8; 384],
+
+    // ----- AI verdict (ReturnIssue only), set once by post_verdict -----
+    pub tier_count: u8,
+    // Severity tier (0-4) of each finding; only the first tier_count count.
+    pub tiers: [u8; 8],
+    // Deposit share to the owner, computed on-chain from tiers and the rubric.
+    pub verdict_owner_bps: u16,
+    pub prompt_hash: [u8; 32],
+    pub output_hash: [u8; 32],
+    pub verdict_posted_at: i64,
+    pub appeal_deadline: i64,
+    // appeal_deadline + appeal_expiry_secs, fixed when the verdict is posted.
+    pub appeal_expires_at: i64,
+
+    // ----- Appeals: each party at most once, bond held in this account -----
+    pub owner_appealed: bool,
+    pub renter_appealed: bool,
+    pub owner_bond: u64,
+    pub renter_bond: u64,
+
+    // ----- Outcome -----
+    // Deposit share the owner actually got (0 when resolve_dispute split
+    // amounts directly rather than by basis points).
+    pub final_owner_bps: u16,
+    // Reviewer(s) who decided; default keys when nobody did (finalize,
+    // expiry).
+    pub resolved_by: [Pubkey; 2],
+    pub resolved_at: i64,
+
+    pub reserved: [u8; 193],
+}
+
+// User-protection pool, seeds ["pool"]. Holds forfeited appeal bonds as
+// lamports above its own rent; the admin pays users out of it.
+#[account]
+#[derive(InitSpace)]
+pub struct Pool {
+    pub bump: u8,
+    pub total_received: u64,
+    pub total_withdrawn: u64,
+    pub reserved: [u8; 64],
 }

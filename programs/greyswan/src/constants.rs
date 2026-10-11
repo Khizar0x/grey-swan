@@ -72,3 +72,8 @@ pub const TIMELINE_SEED: &[u8] = b"timeline";
 pub const DISPUTE_SEED: &[u8] = b"dispute";
 
 pub const SECONDS_PER_WEEK: i64 = 7 * 86_400;
+
+pub const POOL_SEED: &[u8] = b"pool";
+
+/// Most findings one verdict can list.
+pub const MAX_VERDICT_TIERS: usize = 8;

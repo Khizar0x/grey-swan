@@ -11,6 +11,7 @@ pub mod handover;
 pub mod dispute;
 pub mod migrate_config;
 pub mod update_config;
+pub mod pool;
 
 pub use initialize::*;
 pub use increment::*;
@@ -25,3 +26,4 @@ pub use handover::*;
 pub use dispute::*;
 pub use migrate_config::*;
 pub use update_config::*;
+pub use pool::*;
