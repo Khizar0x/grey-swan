@@ -184,6 +184,8 @@ fn test_flag_return_issue() {
             .data(),
             greyswan::accounts::SubmitPhase3 {
                 rental: rental.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
+                config: common::config_pda(),
                 renter: renter.pubkey(),
             }
             .to_account_metas(None),

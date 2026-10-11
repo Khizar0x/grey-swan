@@ -219,6 +219,8 @@ fn test_remove_listing_closes_account_but_preserves_rental_history() {
                 .data(),
                 greyswan::accounts::SubmitPhase3 {
                     rental: rental.pubkey(),
+                    timeline: common::timeline_pda(&rental.pubkey()),
+                    config: common::config_pda(),
                     renter: renter.pubkey(),
                 }
                 .to_account_metas(None),

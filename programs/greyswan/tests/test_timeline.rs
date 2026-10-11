@@ -47,7 +47,11 @@ fn phase1_creates_timeline_paid_by_owner() {
     assert_eq!(timeline.rental, rental);
     assert_eq!(timeline.shipped_at, START_TIME);
     assert_eq!(timeline.arrival_deadline, START_TIME + DEFAULT_WINDOW);
-    assert_eq!(timeline.reserved, [0u8; 56]);
+    assert_eq!(timeline.arrived_at, 0);
+    assert_eq!(timeline.return_due_at, 0);
+    assert_eq!(timeline.return_shipped_at, 0);
+    assert_eq!(timeline.inspection_deadline, 0);
+    assert_eq!(timeline.reserved, [0u8; 24]);
 
     let size = 8 + RentalTimeline::INIT_SPACE;
     assert_eq!(size, 113);
@@ -163,26 +167,6 @@ fn prefunded_timeline_address_does_not_block_shipping() {
 
 // ---------- Legacy rentals (shipped before timelines existed) ----------
 
-/// A real devnet rental, dumped read-only with `solana account
-/// 5gTKMr7zK5WDfS4wwffGHbKx9TShBYnJaKf3d4Uz56xC --url devnet --output json`.
-/// It is Active and at BeforeSending: shipped under the old program, so it
-/// has no timeline. It shipped in September 2026, far outside any window.
-fn legacy_shipped_rental() -> (LiteSVM, Pubkey, Pubkey) {
-    let mut svm = devnet_svm();
-    set_time(&mut svm, START_TIME + 60 * 86_400);
-    init_test_config(&mut svm);
-    let rental = load_fixture(
-        &mut svm,
-        include_str!("fixtures/devnet_legacy_shipped_rental.json"),
-    );
-    let state = read::<Rental>(&svm, &rental);
-    assert_eq!(state.status, RentalStatus::Active);
-    assert_eq!(state.current_phase, HandoverPhase::BeforeSending);
-    assert!(svm.get_account(&timeline_pda(&rental)).is_none());
-    svm.airdrop(&state.renter, 1_000_000_000).unwrap();
-    (svm, rental, state.renter)
-}
-
 #[test]
 fn legacy_rental_without_timeline_can_still_arrive() {
     let (mut svm, rental, renter) = legacy_shipped_rental();
@@ -203,6 +187,40 @@ fn legacy_rental_without_timeline_can_still_arrive() {
 }
 
 #[test]
+fn legacy_rental_without_timeline_can_still_be_sent_back() {
+    // No timeline means no recorded dates, but the handover still moves on.
+    let (mut svm, rental, renter) = legacy_shipped_rental();
+    send_as(
+        &mut svm,
+        ix(
+            greyswan::instruction::SubmitPhase2 { photos: "ipfs://QmPhase2".to_string() },
+            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), renter },
+        ),
+        renter,
+    )
+    .unwrap();
+    send_as(
+        &mut svm,
+        ix(
+            greyswan::instruction::SubmitPhase3 {
+                photos: "ipfs://QmPhase3".to_string(),
+                tracking_number: "RM987654321GB".to_string(),
+            },
+            greyswan::accounts::SubmitPhase3 {
+                rental,
+                timeline: timeline_pda(&rental),
+                config: config_pda(),
+                renter,
+            },
+        ),
+        renter,
+    )
+    .unwrap();
+    assert_eq!(phase(&svm, &rental), HandoverPhase::BeforeReturning);
+    assert!(svm.get_account(&timeline_pda(&rental)).is_none());
+}
+
+#[test]
 fn legacy_rental_without_timeline_can_still_be_rejected() {
     let (mut svm, rental, renter) = legacy_shipped_rental();
     send_as(&mut svm, reject_on_arrival_ix(rental, renter), renter).unwrap();
@@ -210,17 +228,6 @@ fn legacy_rental_without_timeline_can_still_be_rejected() {
 }
 
 // ---------- confirm_arrival_after_deadline ----------
-
-fn confirm_after_deadline_ix(rental: Pubkey, owner: Pubkey) -> anchor_lang::solana_program::instruction::Instruction {
-    ix(
-        greyswan::instruction::ConfirmArrivalAfterDeadline {},
-        greyswan::accounts::ConfirmArrivalAfterDeadline { rental, timeline: timeline_pda(&rental), owner },
-    )
-}
-
-fn confirm_after_deadline(svm: &mut LiteSVM, rental: Pubkey, signer: &Keypair) -> Result<(), String> {
-    send(svm, confirm_after_deadline_ix(rental, signer.pubkey()), signer, &[signer])
-}
 
 #[test]
 fn owner_confirms_arrival_after_deadline_and_rental_completes() {
@@ -303,4 +310,88 @@ fn confirm_after_deadline_not_available_for_legacy_rental() {
     // anchor_lang AccountNotInitialized
     assert!(err.contains("Custom(3012)"), "got {err}");
     assert_eq!(phase(&svm, &rental), HandoverPhase::BeforeSending);
+}
+
+// ---------- Recorded rental times ----------
+
+const WEEK: i64 = 7 * 86_400;
+const DEFAULT_INSPECTION: i64 = 7 * 86_400;
+
+fn timeline(svm: &LiteSVM, rental: &Pubkey) -> RentalTimeline {
+    read::<RentalTimeline>(svm, &timeline_pda(rental))
+}
+
+#[test]
+fn rental_period_starts_when_the_renter_has_the_item() {
+    let (mut svm, _, _, renter, rental) = shipped();
+    warp(&mut svm, 2 * 86_400);
+    phase2(&mut svm, rental, &renter).unwrap();
+
+    let arrived = START_TIME + 2 * 86_400;
+    let t = timeline(&svm, &rental);
+    assert_eq!(t.arrived_at, arrived);
+    assert_eq!(t.return_due_at, arrived + WEEKS as i64 * WEEK);
+    // Not from payment: the rental was paid for at START_TIME.
+    assert_eq!(read::<Rental>(&svm, &rental).created_at, START_TIME);
+    assert_eq!(t.return_shipped_at, 0);
+    assert_eq!(t.inspection_deadline, 0);
+}
+
+#[test]
+fn forced_arrival_starts_the_rental_period_at_the_missed_deadline() {
+    let (mut svm, _, owner, _, rental) = shipped();
+    // The owner calls four days after the deadline; the period still starts
+    // at the deadline, not at the call.
+    warp(&mut svm, DEFAULT_WINDOW + 4 * 86_400);
+    confirm_after_deadline(&mut svm, rental, &owner).unwrap();
+
+    let t = timeline(&svm, &rental);
+    assert_eq!(t.arrived_at, t.arrival_deadline);
+    assert_eq!(t.arrived_at, START_TIME + DEFAULT_WINDOW);
+    assert_eq!(t.return_due_at, START_TIME + DEFAULT_WINDOW + WEEKS as i64 * WEEK);
+}
+
+#[test]
+fn sending_the_item_back_fixes_the_inspection_deadline() {
+    let (mut svm, _, _, renter, rental) = shipped();
+    phase2(&mut svm, rental, &renter).unwrap();
+    warp(&mut svm, 10 * 86_400);
+    phase3(&mut svm, rental, &renter).unwrap();
+
+    let t = timeline(&svm, &rental);
+    assert_eq!(t.return_shipped_at, START_TIME + 10 * 86_400);
+    assert_eq!(t.inspection_deadline, START_TIME + 10 * 86_400 + DEFAULT_INSPECTION);
+    // Arrival times are untouched.
+    assert_eq!(t.arrived_at, START_TIME);
+}
+
+#[test]
+fn stored_deadlines_do_not_move_when_config_changes() {
+    let (mut svm, admin, _, renter, rental) = shipped();
+    phase2(&mut svm, rental, &renter).unwrap();
+    phase3(&mut svm, rental, &renter).unwrap();
+    let before = svm.get_account(&timeline_pda(&rental)).unwrap().data;
+
+    send(
+        &mut svm,
+        ix(
+            greyswan::instruction::UpdateConfig {
+                update: ConfigUpdate {
+                    phase2_deadline_secs: Some(2 * 86_400),
+                    not_returned_grace_secs: Some(10 * 86_400),
+                    inspection_deadline_secs: Some(2 * 86_400),
+                    ..Default::default()
+                },
+            },
+            greyswan::accounts::UpdateConfig { config: config_pda(), admin: admin.pubkey() },
+        ),
+        &admin,
+        &[&admin],
+    )
+    .unwrap();
+
+    assert_eq!(svm.get_account(&timeline_pda(&rental)).unwrap().data, before);
+    let t = timeline(&svm, &rental);
+    assert_eq!(t.arrival_deadline, START_TIME + DEFAULT_WINDOW);
+    assert_eq!(t.inspection_deadline, START_TIME + DEFAULT_INSPECTION);
 }

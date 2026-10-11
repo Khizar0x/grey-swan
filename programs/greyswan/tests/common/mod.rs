@@ -205,7 +205,12 @@ pub fn phase3(svm: &mut LiteSVM, rental: Pubkey, renter: &Keypair) -> Result<(),
                 photos: "ipfs://QmPhase3".to_string(),
                 tracking_number: "RM987654321GB".to_string(),
             },
-            greyswan::accounts::SubmitPhase3 { rental, renter: renter.pubkey() },
+            greyswan::accounts::SubmitPhase3 {
+                rental,
+                timeline: timeline_pda(&rental),
+                config: config_pda(),
+                renter: renter.pubkey(),
+            },
         ),
         renter,
         &[renter],
@@ -229,6 +234,17 @@ pub fn all_phases(svm: &mut LiteSVM, rental: Pubkey, owner: &Keypair, renter: &K
     phase2(svm, rental, renter).unwrap();
     phase3(svm, rental, renter).unwrap();
     phase4(svm, rental, owner).unwrap();
+}
+
+pub fn confirm_after_deadline_ix(rental: Pubkey, owner: Pubkey) -> Instruction {
+    ix(
+        greyswan::instruction::ConfirmArrivalAfterDeadline {},
+        greyswan::accounts::ConfirmArrivalAfterDeadline { rental, timeline: timeline_pda(&rental), owner },
+    )
+}
+
+pub fn confirm_after_deadline(svm: &mut LiteSVM, rental: Pubkey, signer: &Keypair) -> Result<(), String> {
+    send(svm, confirm_after_deadline_ix(rental, signer.pubkey()), signer, &[signer])
 }
 
 pub fn flag_return_issue_ix(rental: Pubkey, owner: Pubkey) -> Instruction {
@@ -290,6 +306,25 @@ pub fn init_test_config(svm: &mut LiteSVM) -> Keypair {
     let admin = funded(svm);
     init_config(svm, &admin);
     admin
+}
+
+/// A real devnet rental, dumped read-only with `solana account
+/// 5gTKMr7zK5WDfS4wwffGHbKx9TShBYnJaKf3d4Uz56xC --url devnet --output json`.
+/// It is Active and at BeforeSending: shipped under the old program, so it
+/// has no timeline. It shipped in September 2026, far outside any window.
+/// Returns the svm (with a fresh, current Config), the rental and its renter.
+pub fn legacy_shipped_rental() -> (LiteSVM, Pubkey, Pubkey) {
+    use greyswan::state::{HandoverPhase, Rental, RentalStatus};
+    let mut svm = devnet_svm();
+    set_time(&mut svm, START_TIME + 60 * 86_400);
+    init_test_config(&mut svm);
+    let rental = load_fixture(&mut svm, include_str!("../fixtures/devnet_legacy_shipped_rental.json"));
+    let state = read::<Rental>(&svm, &rental);
+    assert_eq!(state.status, RentalStatus::Active);
+    assert_eq!(state.current_phase, HandoverPhase::BeforeSending);
+    assert!(svm.get_account(&timeline_pda(&rental)).is_none());
+    svm.airdrop(&state.renter, 1_000_000_000).unwrap();
+    (svm, rental, state.renter)
 }
 
 /// Loads an account dumped with `solana account <address> --output json`

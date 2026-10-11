@@ -250,8 +250,17 @@ pub struct RentalTimeline {
     // shipped_at + phase2_deadline_secs, fixed at shipping so a later Config
     // change doesn't move the deadline for items already in transit.
     pub arrival_deadline: i64,
-    // Room for later phase timestamps (arrived, return shipped, returned).
-    pub reserved: [u8; 56],
+    // A zero in any of the four below means that step hasn't happened yet.
+    // When the renter had the item: their phase 2 time, or arrival_deadline
+    // if the owner confirmed arrival for them after it passed.
+    pub arrived_at: i64,
+    // arrived_at + weeks. The rental period runs from arrival, not payment.
+    pub return_due_at: i64,
+    // When the renter submitted phase 3.
+    pub return_shipped_at: i64,
+    // return_shipped_at + inspection_deadline_secs, fixed at that moment.
+    pub inspection_deadline: i64,
+    pub reserved: [u8; 24],
 }
 
 // Only `Open` for now. New variants must be appended, never reordered (same
