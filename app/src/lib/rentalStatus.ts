@@ -6,10 +6,10 @@ export type StatusStyle = { background: string; color: string; border: string }
 // Same three-tint system as CLAUDE.md's status badges: green (positive),
 // amber (pending), rust (attention). Mapped from the real RentalStatus enum
 // rather than the mockup's ad-hoc status strings.
-const POSITIVE: StatusStyle = { background: 'rgba(22,163,74,0.10)', color: C.green, border: '1px solid rgba(22,163,74,0.22)' }
-const PENDING: StatusStyle = { background: 'rgba(201,162,62,0.10)', color: '#B5893A', border: '1px solid rgba(201,162,62,0.22)' }
-const ATTENTION: StatusStyle = { background: 'rgba(184,92,66,0.10)', color: C.rust, border: '1px solid rgba(184,92,66,0.22)' }
-const NEUTRAL: StatusStyle = { background: 'rgba(38,34,32,0.06)', color: C.muted, border: '1px solid rgba(38,34,32,0.12)' }
+const POSITIVE: StatusStyle = { background: 'var(--gs-badge-positive-bg)', color: C.green, border: '1px solid var(--gs-badge-positive-border)' }
+const PENDING: StatusStyle = { background: 'var(--gs-badge-pending-bg)', color: 'var(--gs-badge-pending-color)', border: '1px solid var(--gs-badge-pending-border)' }
+const ATTENTION: StatusStyle = { background: 'var(--gs-badge-attention-bg)', color: C.rust, border: '1px solid var(--gs-badge-attention-border)' }
+const NEUTRAL: StatusStyle = { background: 'var(--gs-badge-neutral-bg)', color: C.muted, border: '1px solid var(--gs-badge-neutral-border)' }
 
 export function rentalStatusLabel(status: Record<string, object>): string {
   switch (enumKey(status)) {

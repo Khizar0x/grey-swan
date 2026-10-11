@@ -12,10 +12,10 @@ import type { Greyswan } from '../idl/greyswan.ts'
 const READ_ONLY_WALLET = {
   publicKey: PublicKey.default,
   signTransaction: async () => {
-    throw new Error('Connect a wallet to sign transactions.')
+    throw new Error('Connect a wallet first.')
   },
   signAllTransactions: async () => {
-    throw new Error('Connect a wallet to sign transactions.')
+    throw new Error('Connect a wallet first.')
   },
 }
 

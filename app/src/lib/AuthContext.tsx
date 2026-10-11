@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!publicKey) return
     const forPubkey = publicKey.toBase58()
     if (!signMessage) {
-      setError('This wallet doesn’t support message signing — try Phantom or Solflare.')
+      setError('This wallet doesn’t support message signing. Try Phantom or Solflare.')
       return
     }
     setSigningIn(true)

@@ -11,7 +11,10 @@ export type RentalAccountEntry = Awaited<ReturnType<Program<Greyswan>['account']
 // background refetches catch up without polling indefinitely.
 const SETTLE_DELAYS_MS = [2000, 5000]
 
-export function useRentals() {
+// `enabled` (default true) skips the fetch entirely when false — used by
+// the header's unread-messages badge so an anonymous, not-connected visitor
+// never triggers an all-rentals RPC call just from having the app open.
+export function useRentals(enabled = true) {
   const program = useProgram()
   const [rentals, setRentals] = useState<RentalAccountEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,6 +37,10 @@ export function useRentals() {
   )
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false)
+      return
+    }
     const cancelledRef = { current: false }
     setLoading(true)
 
@@ -47,7 +54,7 @@ export function useRentals() {
       cancelledRef.current = true
       timers.forEach(clearTimeout)
     }
-  }, [fetchOnce])
+  }, [fetchOnce, enabled])
 
   return { rentals, loading, error }
 }
