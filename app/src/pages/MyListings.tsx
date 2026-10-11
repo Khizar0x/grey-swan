@@ -1,15 +1,12 @@
 import { useWallet } from '@solana/wallet-adapter-react'
-import { PublicKey } from '@solana/web3.js'
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { UnreadBadge } from '../components/atoms'
+import { OwnerListingActions } from '../components/OwnerListingActions'
 import { IconCamera, IconCheck } from '../components/icons'
 import { RetryImage } from '../components/RetryImage'
 import { useAuthContext } from '../lib/AuthContext'
 import { formatSol } from '../lib/format'
 import { categoryColor, categoryLabel, enumKey } from '../lib/listing'
-import { removeListing } from '../lib/mutations'
-import { useProgram } from '../lib/program'
 import { usePhotoUrls } from '../lib/usePhotoUrls'
 import { rentalStatusLabel, rentalStatusStyle, type StatusStyle } from '../lib/rentalStatus'
 import { C, FONT_HEAD } from '../lib/theme'
@@ -17,7 +14,6 @@ import { useListings, type ListingAccountEntry } from '../lib/useListings'
 import { useUnreadCounts } from '../lib/useUnreadCounts'
 import type { RentalAccountEntry } from '../lib/useRentals'
 import { useRentals } from '../lib/useRentals'
-import { withTimeout } from '../lib/withTimeout'
 
 const AVAILABLE_STYLE: StatusStyle = { background: 'var(--gs-badge-positive-bg)', color: C.green, border: '1px solid var(--gs-badge-positive-border)' }
 
@@ -52,20 +48,12 @@ function ListingCard({
   listing,
   rental,
   unread,
-  removing,
-  confirmingRemove,
-  onConfirmRemove,
-  onCancelRemove,
-  onRemove,
+  onRemoved,
 }: {
   listing: ListingAccountEntry
   rental: RentalAccountEntry | undefined
   unread: number
-  removing: boolean
-  confirmingRemove: boolean
-  onConfirmRemove: () => void
-  onCancelRemove: () => void
-  onRemove: () => void
+  onRemoved: () => void
 }) {
   const pubkeyStr = listing.publicKey.toBase58()
   const { urls, loading: photosLoading } = usePhotoUrls(listing.account.photos)
@@ -163,38 +151,7 @@ function ListingCard({
               )}
             </>
           ) : (
-            <>
-              <Link
-                to={`/listing/${pubkeyStr}/edit`}
-                className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all hover:opacity-80"
-                style={{ color: C.cream, border: `1px solid ${C.border}`, background: 'transparent' }}
-              >
-                Edit
-              </Link>
-              {confirmingRemove ? (
-                <>
-                  <button
-                    onClick={onRemove}
-                    disabled={removing}
-                    className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-                    style={{ background: C.rust, color: C.onAccent }}
-                  >
-                    {removing ? 'Removing…' : 'Confirm'}
-                  </button>
-                  <button onClick={onCancelRemove} className="whitespace-nowrap rounded-lg px-2 py-1.5 text-xs" style={{ color: C.faint }}>
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={onConfirmRemove}
-                  className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all hover:opacity-80"
-                  style={{ color: C.rust, border: '1px solid var(--gs-badge-negative-border)', background: 'transparent' }}
-                >
-                  Remove
-                </button>
-              )}
-            </>
+            <OwnerListingActions listingPubkey={pubkeyStr} onRemoved={onRemoved} />
           )}
         </div>
       </div>
@@ -205,13 +162,8 @@ function ListingCard({
 export function MyListings() {
   const { publicKey } = useWallet()
   const { token } = useAuthContext()
-  const program = useProgram()
   const { listings, loading: listingsLoading, error: listingsError, refetch } = useListings()
   const { rentals, loading: rentalsLoading } = useRentals()
-
-  const [removing, setRemoving] = useState<string | null>(null)
-  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null)
-  const [removeError, setRemoveError] = useState<string | null>(null)
 
   const myListings = publicKey ? listings.filter((l) => l.account.owner.equals(publicKey)) : []
 
@@ -229,21 +181,6 @@ export function MyListings() {
     const rental = activeRentalByListing.get(l.publicKey.toBase58())
     return rental ? sum + rental.account.depositAmount.toNumber() : sum
   }, 0)
-
-  const handleRemove = async (listingPubkey: string) => {
-    if (!publicKey) return
-    setRemoveError(null)
-    setRemoving(listingPubkey)
-    try {
-      await withTimeout(removeListing(program, new PublicKey(listingPubkey), publicKey))
-      refetch()
-    } catch (err) {
-      setRemoveError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setRemoving(null)
-      setConfirmingRemove(null)
-    }
-  }
 
   const loading = listingsLoading || rentalsLoading
 
@@ -290,12 +227,6 @@ export function MyListings() {
           You haven't listed anything yet.
         </p>
       )}
-      {removeError && (
-        <p className="mb-4 text-sm" style={{ color: C.rust }}>
-          {removeError}
-        </p>
-      )}
-
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {myListings.map((l) => {
           const pubkeyStr = l.publicKey.toBase58()
@@ -306,11 +237,7 @@ export function MyListings() {
               listing={l}
               rental={rental}
               unread={rental ? unreadCounts.get(rental.publicKey.toBase58()) ?? 0 : 0}
-              removing={removing === pubkeyStr}
-              confirmingRemove={confirmingRemove === pubkeyStr}
-              onConfirmRemove={() => setConfirmingRemove(pubkeyStr)}
-              onCancelRemove={() => setConfirmingRemove(null)}
-              onRemove={() => handleRemove(pubkeyStr)}
+              onRemoved={refetch}
             />
           )
         })}

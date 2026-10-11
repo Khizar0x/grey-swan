@@ -2,9 +2,11 @@ import { AddressAutofill } from '@mapbox/search-js-react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey } from '@solana/web3.js'
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { SuccessPill } from '../components/atoms'
 import { IconCamera } from '../components/icons'
+import { Lightbox } from '../components/Lightbox'
+import { OwnerListingActions } from '../components/OwnerListingActions'
 import { ProfileForm, type ProfileFormHandle } from '../components/ProfileForm'
 import { RetryImage } from '../components/RetryImage'
 import { fetchLatestRenterAddress, saveAddress } from '../lib/addressApi'
@@ -16,6 +18,8 @@ import { categoryColor, categoryLabel, rarityLabel, enumKey, isVirtualCategory }
 import { geocodeAddress, geocodeArea, haversineDistanceKm, MAPBOX_TOKEN } from '../lib/mapbox'
 import { rentItem } from '../lib/mutations'
 import { useProfile } from '../lib/ProfileContext'
+import { rentalStatusLabel, rentalStatusStyle } from '../lib/rentalStatus'
+import { useRentals } from '../lib/useRentals'
 import { useProgram } from '../lib/program'
 import { saveProfile } from '../lib/profileApi'
 import { useSavedArea } from '../lib/SavedAreaContext'
@@ -102,6 +106,11 @@ export function ListingDetail() {
   // instead, so there's one outer submit action, not a second nested form.
   const profileFormRef = useRef<ProfileFormHandle>(null)
   const needsProfile = profileChecked && !profile
+  const navigate = useNavigate()
+  // The owner sees their own listing page, not the booking panel. Rentals are
+  // only fetched for the owner, to show whether the item is out right now.
+  const isOwner = Boolean(publicKey && listing && listing.owner.equals(publicKey))
+  const { rentals } = useRentals(isOwner)
 
   useEffect(() => {
     if (!pubkey) return
@@ -337,6 +346,13 @@ export function ListingDetail() {
   const isVirtual = isVirtualCategory(enumKey(listing.category))
   const rentalCost = listing.rentalPrice.toNumber() * weeks
   const total = rentalCost + listing.depositAmount.toNumber()
+  const activeRental = isOwner
+    ? rentals.find((r) => {
+        if (r.account.listing.toBase58() !== pubkey) return false
+        const key = enumKey(r.account.status)
+        return key !== 'completed' && key !== 'refundedAuto' && key !== 'resolved'
+      })
+    : undefined
 
   const handleRent = async () => {
     if (!publicKey || !token) return
@@ -447,7 +463,7 @@ export function ListingDetail() {
         : validatingAddress
           ? 'Verifying address…'
           : renting
-            ? 'Confirming…'
+            ? 'Waiting for your wallet to approve…'
             : 'Rent Now'
 
   return (
@@ -557,7 +573,7 @@ export function ListingDetail() {
             {listing.itemName}
           </h1>
           <p className="mb-6 text-sm" style={{ color: C.muted }}>
-            Listed by {listing.owner.toBase58().slice(0, 4)}...{listing.owner.toBase58().slice(-4)}
+            {isOwner ? 'Listed by you' : `Listed by ${listing.owner.toBase58().slice(0, 4)}...${listing.owner.toBase58().slice(-4)}`}
           </p>
           <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
             <h3 className="mb-3 font-semibold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
@@ -571,6 +587,11 @@ export function ListingDetail() {
 
         <div>
           <div className="sticky top-24 rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+            {isOwner && (
+              <h2 className="mb-4 text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                This is your listing
+              </h2>
+            )}
             <div className="mb-6 grid grid-cols-2 gap-3">
               <div className="rounded-xl p-3.5" style={{ background: C.subtleBg, border: `1px solid ${C.border}` }}>
                 <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
@@ -609,6 +630,34 @@ export function ListingDetail() {
               </div>
             </div>
 
+            {isOwner ? (
+              <div className="flex flex-col gap-4">
+                <div className="rounded-xl p-3.5 text-sm" style={{ background: C.subtleBg, border: `1px solid ${C.border}` }}>
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
+                    Status
+                  </div>
+                  {activeRental ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={rentalStatusStyle(activeRental.account.status)}>
+                        {rentalStatusLabel(activeRental.account.status)}
+                      </span>
+                      <Link to={`/rental/${activeRental.publicKey.toBase58()}`} className="text-xs font-semibold underline" style={{ color: C.primary }}>
+                        View this rental
+                      </Link>
+                    </div>
+                  ) : (
+                    <span className="font-semibold" style={{ color: C.green }}>
+                      Available to rent
+                    </span>
+                  )}
+                </div>
+                {!activeRental && <OwnerListingActions listingPubkey={pubkey} onRemoved={() => navigate('/my-listings')} />}
+                <Link to="/my-listings" className="text-sm underline" style={{ color: C.muted }}>
+                  Go to your listings
+                </Link>
+              </div>
+            ) : (
+              <>
             <div className="mb-6">
               <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide" style={{ color: C.faint }}>
                 Number of weeks (1 to 12)
@@ -882,6 +931,8 @@ export function ListingDetail() {
                 Your {formatSol(listing.depositAmount)} deposit stays safely held until the rental is completed.
               </p>
             </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -894,78 +945,6 @@ export function ListingDetail() {
           onClose={() => setLightboxOpen(false)}
           onNavigate={setSelectedPhoto}
         />
-      )}
-    </div>
-  )
-}
-
-function Lightbox({
-  urls,
-  index,
-  alt,
-  onClose,
-  onNavigate,
-}: {
-  urls: string[]
-  index: number
-  alt: string
-  onClose: () => void
-  onNavigate: (i: number) => void
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-      style={{ background: C.overlayBg }}
-      onClick={onClose}
-    >
-      <button
-        onClick={onClose}
-        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full text-lg shadow-md transition-opacity hover:opacity-80"
-        style={{ background: C.surface, color: C.cream, border: `1px solid ${C.border}` }}
-        aria-label="Close"
-      >
-        ×
-      </button>
-
-      {urls.length > 1 && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onNavigate((index - 1 + urls.length) % urls.length)
-          }}
-          className="absolute left-4 flex h-10 w-10 items-center justify-center rounded-full text-xl shadow-md transition-opacity hover:opacity-80"
-          style={{ background: C.surface, color: C.cream, border: `1px solid ${C.border}` }}
-          aria-label="Previous photo"
-        >
-          ‹
-        </button>
-      )}
-
-      <RetryImage
-        src={urls[index]}
-        alt={`${alt}, photo ${index + 1}`}
-        className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      />
-
-      {urls.length > 1 && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onNavigate((index + 1) % urls.length)
-          }}
-          className="absolute right-4 flex h-10 w-10 items-center justify-center rounded-full text-xl shadow-md transition-opacity hover:opacity-80"
-          style={{ background: C.surface, color: C.cream, border: `1px solid ${C.border}` }}
-          aria-label="Next photo"
-        >
-          ›
-        </button>
-      )}
-
-      {urls.length > 1 && (
-        <div className="absolute bottom-4 rounded-full px-3 py-1 text-xs font-medium shadow-md" style={{ background: C.surface, color: C.cream, border: `1px solid ${C.border}` }}>
-          {index + 1} / {urls.length}
-        </div>
       )}
     </div>
   )

@@ -15,6 +15,12 @@ import { useProfile } from '../lib/ProfileContext'
 import { useWalletModal } from '../lib/WalletModalContext'
 import { withTimeout } from '../lib/withTimeout'
 
+// A listing's address is derived from the item name, and Solana limits each
+// seed to 32 bytes. Bytes, not characters: an accented letter or emoji takes
+// more than one.
+const MAX_ITEM_NAME_BYTES = 32
+const ITEM_NAME_TOO_LONG = 'Item names can be up to 32 characters'
+
 const DEPOSIT_CAP_RATIO = 0.45
 
 export function ListItem() {
@@ -25,6 +31,7 @@ export function ListItem() {
   const { open: openWalletModal } = useWalletModal()
 
   const [itemName, setItemName] = useState('')
+  const itemNameBytes = new TextEncoder().encode(itemName).length
   const [description, setDescription] = useState('')
   const [photos, setPhotos] = useState('')
   const [rentalPrice, setRentalPrice] = useState('')
@@ -147,8 +154,8 @@ export function ListItem() {
         setError("Add a general area (city or postcode) so renters considering pickup can judge distance. Not your exact address.")
         return
       }
-      if (itemName.length > 50) {
-        setError('Item name must be 50 characters or fewer.')
+      if (itemNameBytes > MAX_ITEM_NAME_BYTES) {
+        setError(ITEM_NAME_TOO_LONG)
         return
       }
       if (description.length > 1200) {
@@ -199,7 +206,8 @@ export function ListItem() {
       }
       setResult({ signature, itemName, areaSaveFailed })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      setError(/max seed length/i.test(message) ? ITEM_NAME_TOO_LONG : message)
     } finally {
       setSubmitting(false)
     }
@@ -234,7 +242,7 @@ export function ListItem() {
           ? 'Try signing in again'
           : 'Signing in…'
         : submitting
-          ? 'Creating listing…'
+          ? 'Waiting for your wallet to approve…'
           : 'Create a listing'
 
   const selectedCategoryColor = CATEGORIES.find((c) => c.key === category)?.color ?? C.border
@@ -329,10 +337,16 @@ export function ListItem() {
                   value={itemName}
                   onChange={(e) => setItemName(e.target.value)}
                   placeholder="e.g. Canon EOS Camera"
-                  maxLength={50}
                   required
-                  style={INPUT_STYLE}
+                  aria-invalid={itemNameBytes > MAX_ITEM_NAME_BYTES}
+                  style={itemNameBytes > MAX_ITEM_NAME_BYTES ? { ...INPUT_STYLE, border: `1px solid ${C.rust}` } : INPUT_STYLE}
                 />
+                <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+                  <span style={{ color: C.rust }}>{itemNameBytes > MAX_ITEM_NAME_BYTES ? ITEM_NAME_TOO_LONG : ''}</span>
+                  <span style={{ color: itemNameBytes > MAX_ITEM_NAME_BYTES ? C.rust : C.faint }}>
+                    {itemNameBytes}/{MAX_ITEM_NAME_BYTES}
+                  </span>
+                </div>
               </Field>
 
               <Field label="Description">
@@ -472,7 +486,7 @@ export function ListItem() {
 
             <button
               type="submit"
-              disabled={submitting || signingIn}
+              disabled={submitting || signingIn || itemNameBytes > MAX_ITEM_NAME_BYTES}
               className="w-full rounded-2xl py-4 text-base font-bold transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
               style={{ background: C.primary, color: C.onAccent, boxShadow: C.primaryGlow }}
             >

@@ -212,7 +212,7 @@ export function EditListing() {
           className="w-full rounded-xl py-3.5 text-base font-semibold transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
           style={{ background: C.primary, color: C.onAccent }}
         >
-          {submitting ? 'Saving…' : 'Save changes'}
+          {submitting ? 'Waiting for your wallet to approve…' : 'Save changes'}
         </button>
       </form>
     </div>
