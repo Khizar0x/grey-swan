@@ -37,3 +37,25 @@ export function formatLamports(lamports: bigint): string {
   const fraction = (lamports % 1_000_000_000n).toString().padStart(9, '0').replace(/0+$/, '').padEnd(2, '0')
   return `${whole}.${fraction} SOL`
 }
+
+// When the program asks for a second reviewer. Mirrors verdict.rs
+// (reviewer_resolve) and dispute.rs (resolve_dispute): a Major-sized share to
+// the owner, or a large amount held, needs two different reviewers.
+export function reviewerResolveNeedsTwo(params: { majorBps: number; threshold: bigint; deposit: bigint; ownerBps: number }): boolean {
+  return params.ownerBps >= params.majorBps || params.deposit > params.threshold
+}
+
+export function legacyResolveNeedsTwo(params: {
+  majorBps: number
+  threshold: bigint
+  totalHeld: bigint
+  deposit: bigint
+  ownerAmount: bigint
+  renterAmount: bigint
+}): boolean {
+  return (
+    params.totalHeld > params.threshold ||
+    params.ownerAmount * BigInt(MAX_BPS) >= params.totalHeld * BigInt(params.majorBps) ||
+    params.renterAmount > params.deposit
+  )
+}

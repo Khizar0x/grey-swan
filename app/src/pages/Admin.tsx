@@ -5,13 +5,17 @@ import { PublicKey } from '@solana/web3.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { Btn } from '../components/atoms'
+import { ReviewerResolvePanel } from '../components/admin/ReviewerResolvePanel'
+import { TwoReviewerFlow } from '../components/admin/TwoReviewerFlow'
 import { type DisputeNote, type DisputeReviewStatus, fetchDisputeNotes, saveDisputeNote } from '../lib/adminApi'
 import { useAuthContext } from '../lib/AuthContext'
+import { legacyResolveNeedsTwo } from '../lib/disputeMath'
+import { formatDeadlineDate } from '../lib/deadlines'
 import { formatSol } from '../lib/format'
 import type { Greyswan } from '../idl/greyswan.ts'
 import { gatewayUrl } from '../lib/ipfs'
 import { enumKey } from '../lib/listing'
-import { resolveDispute } from '../lib/mutations'
+import { resolveDispute, resolveDisputeTx, voidVerdict } from '../lib/mutations'
 import { useProgram } from '../lib/program'
 import { C, FONT_HEAD, INPUT_STYLE } from '../lib/theme'
 import { useListingsByKeys } from '../lib/useListingsByKeys'
@@ -23,12 +27,43 @@ function truncate(pubkey: string): string {
   return `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`
 }
 
+type DisputeAccount = Awaited<ReturnType<Program<Greyswan>['account']['dispute']['fetch']>>
+type ConfigAccount = Awaited<ReturnType<Program<Greyswan>['account']['config']['fetch']>>
+type Role = 'admin' | 'reviewer'
+
+// Where a dispute stands, in the words a reviewer needs. `group` decides which
+// section of the page it sits in.
+type StageGroup = 'needs' | 'waiting' | 'posted'
+function stageOf(kind: Record<string, object>, dispute: DisputeAccount | null): { label: string; group: StageGroup } {
+  if (!dispute) return { label: 'Older dispute', group: 'needs' }
+  const status = enumKey(dispute.status)
+  const isDamage = enumKey(kind) === 'returnIssue'
+  switch (status) {
+    case 'appealed':
+      return { label: 'Appealed', group: 'needs' }
+    case 'voided':
+      return { label: 'First review set aside', group: 'needs' }
+    case 'verdictPosted':
+      return { label: 'First review posted', group: 'posted' }
+    case 'open':
+      return isDamage ? { label: 'Waiting for the first review', group: 'waiting' } : { label: 'Needs a reviewer', group: 'needs' }
+    default:
+      return { label: status, group: 'needs' }
+  }
+}
+
 function disputePathLabel(kind: Record<string, object>): string {
   switch (enumKey(kind)) {
     case 'returnIssue':
       return 'Owner flagged after return'
     case 'arrivalIssue':
       return 'Renter rejected on arrival'
+    case 'notReturned':
+      return 'Owner says it was not returned'
+    case 'returnNotReceived':
+      return 'Owner says the return never arrived'
+    case 'adminOpened':
+      return 'Opened by the team'
     default:
       return enumKey(kind)
   }
@@ -54,6 +89,10 @@ export function Admin() {
   const { token, signedIn, signingIn, error: authError, signIn } = useAuthContext()
 
   const [adminCheck, setAdminCheck] = useState<AdminCheck>('checking')
+  const [config, setConfig] = useState<ConfigAccount | null>(null)
+  const [role, setRole] = useState<Role | null>(null)
+  const [disputes, setDisputes] = useState<Map<string, DisputeAccount>>(new Map())
+  const [reloadKey, setReloadKey] = useState(0)
 
   // The entire access control for this page: read the Config PDA's `admin`
   // field on-chain and compare it to the connected wallet. No separate
@@ -91,7 +130,14 @@ export function Admin() {
         if (cancelled) return
         try {
           const cfg = await program.account.config.fetch(configPda)
-          if (!cancelled) setAdminCheck(cfg.admin.equals(publicKey) ? 'allowed' : 'denied')
+          if (cancelled) return
+          // The admin or any reviewer on Config may use this page; only the
+          // admin sees the admin-only controls (setting a verdict aside).
+          const isAdmin = cfg.admin.equals(publicKey)
+          const isReviewer = cfg.reviewers.slice(0, cfg.reviewerCount).some((r) => r.equals(publicKey))
+          setConfig(cfg)
+          setRole(isAdmin ? 'admin' : isReviewer ? 'reviewer' : null)
+          setAdminCheck(isAdmin || isReviewer ? 'allowed' : 'denied')
           return
         } catch (err) {
           lastErr = err
@@ -133,6 +179,22 @@ export function Admin() {
   const { rentals, loading: rentalsLoading } = useRentals()
   const disputed = useMemo(() => rentals.filter((r) => enumKey(r.account.status) === 'disputed'), [rentals])
   const listingsMap = useListingsByKeys(disputed.map((r) => r.account.listing))
+
+  // One Dispute account per rental disputed since they were introduced; older
+  // disputes have none and are listed as such.
+  useEffect(() => {
+    if (adminCheck !== 'allowed') return
+    let cancelled = false
+    program.account.dispute
+      .all()
+      .then((rows) => {
+        if (!cancelled) setDisputes(new Map(rows.map((r) => [r.account.rental.toBase58(), r.account])))
+      })
+      .catch((err) => console.error('Could not load dispute accounts:', err))
+    return () => {
+      cancelled = true
+    }
+  }, [adminCheck, program, reloadKey])
 
   const [notes, setNotes] = useState<Map<string, DisputeNote>>(new Map())
   const [notesError, setNotesError] = useState<string | null>(null)
@@ -184,7 +246,7 @@ export function Admin() {
         Rentals needing review
       </h1>
       <p className="mb-8 text-sm" style={{ color: C.faint }}>
-        Rentals flagged by an owner after return or rejected by a renter on arrival.
+        Rentals that were flagged, rejected or timed out, grouped by where they stand.
       </p>
 
       {rentalsLoading && (
@@ -203,40 +265,72 @@ export function Admin() {
         </p>
       )}
 
-      <div className="flex flex-col gap-4">
-        {disputed.map((r) => (
-          <DisputeCard
-            key={r.publicKey.toBase58()}
-            program={program}
-            adminPubkey={publicKey!}
-            rental={r}
-            itemName={listingsMap.get(r.account.listing.toBase58())?.itemName ?? 'Item'}
-            existingNote={notes.get(r.publicKey.toBase58())}
-            token={token!}
-            onSaved={(row) => setNotes((prev) => new Map(prev).set(row.rental_pubkey, row))}
-          />
-        ))}
-      </div>
+      {GROUPS.map((g) => {
+        const rows = disputed.filter((r) => stageOf(r.account.disputeKind, disputes.get(r.publicKey.toBase58()) ?? null).group === g.key)
+        if (rows.length === 0) return null
+        return (
+          <section key={g.key} className="mb-8">
+            <h2 className="mb-1 text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+              {g.title} ({rows.length})
+            </h2>
+            <p className="mb-3 text-xs" style={{ color: C.faint }}>
+              {g.hint}
+            </p>
+            <div className="flex flex-col gap-4">
+              {rows.map((r) => (
+                <DisputeCard
+                  key={r.publicKey.toBase58()}
+                  program={program}
+                  adminPubkey={publicKey!}
+                  rental={r}
+                  dispute={disputes.get(r.publicKey.toBase58()) ?? null}
+                  config={config}
+                  role={role}
+                  itemName={listingsMap.get(r.account.listing.toBase58())?.itemName ?? 'Item'}
+                  existingNote={notes.get(r.publicKey.toBase58())}
+                  token={token!}
+                  onSaved={(row) => setNotes((prev) => new Map(prev).set(row.rental_pubkey, row))}
+                  onChanged={() => setReloadKey((k) => k + 1)}
+                />
+              ))}
+            </div>
+          </section>
+        )
+      })}
     </div>
   )
 }
+
+const GROUPS: { key: StageGroup; title: string; hint: string }[] = [
+  { key: 'needs', title: 'Needs a reviewer', hint: 'Appeals, set-aside reviews, and disputes the automatic review does not handle.' },
+  { key: 'waiting', title: 'Waiting for the first review', hint: 'Damage reports the automatic review has not looked at yet. A reviewer can still decide them.' },
+  { key: 'posted', title: 'First review posted', hint: 'The appeal window is running. Anyone can release the funds once it closes.' },
+]
 
 function DisputeCard({
   program,
   adminPubkey,
   rental,
+  dispute,
+  config,
+  role,
   itemName,
   existingNote,
   token,
   onSaved,
+  onChanged,
 }: {
   program: Program<Greyswan>
   adminPubkey: PublicKey
   rental: RentalAccountEntry
+  dispute: DisputeAccount | null
+  config: ConfigAccount | null
+  role: Role | null
   itemName: string
   existingNote: DisputeNote | undefined
   token: string
   onSaved: (note: DisputeNote) => void
+  onChanged: () => void
 }) {
   const [status, setStatus] = useState<DisputeReviewStatus>(existingNote?.status ?? 'under_review')
   const [note, setNote] = useState(existingNote?.note ?? '')
@@ -289,7 +383,73 @@ function DisputeCard({
   // signal even across a page reload, though which party got paid isn't
   // recorded off-chain and so can't be shown in that case.
   const resolvedElsewhere = status === 'resolved' && !paidTo
-  const locked = paidTo !== null || resolvedElsewhere
+  // A decision made through the damage-dispute path this session.
+  const [decided, setDecided] = useState(false)
+  const [voiding, setVoiding] = useState(false)
+  const [voidError, setVoidError] = useState<string | null>(null)
+  const locked = paidTo !== null || resolvedElsewhere || decided
+
+  const kindKey = enumKey(acc.disputeKind)
+  const stage = stageOf(acc.disputeKind, dispute)
+  const stageStatus = dispute ? enumKey(dispute.status) : 'legacy'
+  // Damage reports with a Dispute account are decided with reviewer_resolve
+  // (a percentage split); everything else uses the older exact-amount call.
+  const usesVerdictEngine = dispute !== null && kindKey === 'returnIssue'
+  const canDecideNow = stageStatus === 'open' || stageStatus === 'appealed' || stageStatus === 'voided'
+
+  const deposit = BigInt(acc.depositAmount.toString())
+  const totalHeld = BigInt(frozen.toString())
+  const legacyNeedsTwo =
+    config !== null && selectedRecipient !== null
+      ? legacyResolveNeedsTwo({
+          majorBps: config.rubricBps[3],
+          threshold: BigInt(config.twoReviewerThresholdLamports.toString()),
+          totalHeld,
+          deposit,
+          ownerAmount: selectedRecipient === 'owner' ? totalHeld : 0n,
+          renterAmount: selectedRecipient === 'renter' ? totalHeld : 0n,
+        })
+      : false
+  const otherReviewers = config
+    ? [config.admin, ...config.reviewers.slice(0, config.reviewerCount)].filter((k) => !k.equals(adminPubkey))
+    : []
+
+  // Funds have moved by now; the review note is a courtesy that must never
+  // look like it undid the payout if it fails.
+  const finishPayout = async (recipient: 'owner' | 'renter') => {
+    setPaidTo(recipient)
+    try {
+      onSaved(await saveDisputeNote(rentalPubkey, 'resolved', note, token))
+    } catch (err) {
+      setPayoutWarning(
+        `Funds were sent to the ${recipient}, but saving the review note failed: ${err instanceof Error ? err.message : String(err)} The payout is final. Only this note didn't save.`,
+      )
+    }
+  }
+
+  const finishVerdictDecision = async () => {
+    setDecided(true)
+    onChanged()
+    try {
+      onSaved(await saveDisputeNote(rentalPubkey, 'resolved', note, token))
+    } catch {
+      setPayoutWarning("The decision is final. Only the review note didn't save.")
+    }
+  }
+
+  const handleVoid = async () => {
+    setVoiding(true)
+    setVoidError(null)
+    try {
+      await withTimeout(voidVerdict(program, rental.publicKey, acc.owner, acc.renter), 30_000)
+      onChanged()
+      setDecided(true)
+    } catch (err) {
+      setVoidError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setVoiding(false)
+    }
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -326,17 +486,7 @@ function DisputeCard({
         // Funds have already moved on-chain at this point — true
         // regardless of what happens next, so the UI reflects it even if
         // the note save that follows fails.
-        setPaidTo(selectedRecipient)
-        try {
-          const row = await saveDisputeNote(rentalPubkey, 'resolved', note, token)
-          onSaved(row)
-        } catch (err) {
-          setPayoutWarning(
-            `Funds were sent to the ${selectedRecipient}, but saving the review note failed: ${
-              err instanceof Error ? err.message : String(err)
-            } The payout is final. Only this note didn't save.`,
-          )
-        }
+        await finishPayout(selectedRecipient)
       } else {
         const row = await saveDisputeNote(rentalPubkey, status, note, token)
         onSaved(row)
@@ -354,9 +504,14 @@ function DisputeCard({
         <h3 className="text-base font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
           {itemName}
         </h3>
-        <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold" style={REVIEW_STYLE[status]}>
-          {REVIEW_LABEL[status]}
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={REVIEW_STYLE[status]}>
+            {REVIEW_LABEL[status]}
+          </span>
+          <span className="text-xs font-medium" style={{ color: C.muted }}>
+            {stage.label}
+          </span>
+        </div>
       </div>
 
       <div className="mb-3 grid grid-cols-2 gap-3 text-xs">
@@ -431,6 +586,54 @@ function DisputeCard({
           />
         </div>
 
+        {usesVerdictEngine && dispute ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs font-medium uppercase tracking-wide" style={{ color: C.faint }}>
+              Decision
+            </p>
+            {locked ? (
+              <p className="text-sm" style={{ color: C.muted }}>
+                This has been decided.
+              </p>
+            ) : canDecideNow && config ? (
+              <ReviewerResolvePanel
+                program={program}
+                rental={rental}
+                reviewer={adminPubkey}
+                otherReviewers={otherReviewers}
+                aiOwnerBps={dispute.verdictPostedAt.toNumber() !== 0 ? dispute.verdictOwnerBps : null}
+                majorBps={config.rubricBps[3]}
+                threshold={BigInt(config.twoReviewerThresholdLamports.toString())}
+                appealed={stageStatus === 'appealed'}
+                onResolved={() => void finishVerdictDecision()}
+              />
+            ) : (
+              <>
+                <p className="text-sm" style={{ color: C.muted }}>
+                  The first review suggested {dispute.verdictOwnerBps / 100}% of the deposit to the owner. The appeal window runs until {formatDeadlineDate(dispute.appealDeadline.toNumber())}. Nothing to decide unless someone appeals.
+                </p>
+                {role === 'admin' && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs" style={{ color: C.faint }}>
+                      If the first review looks wrong, set it aside. A reviewer then decides, and any bonds are returned.
+                    </p>
+                    <div>
+                      <Btn variant="danger" disabled={voiding} onClick={() => void handleVoid()}>
+                        {voiding ? 'Setting aside…' : 'Set the first review aside'}
+                      </Btn>
+                    </div>
+                    {voidError && (
+                      <p className="text-sm" style={{ color: C.rust }}>
+                        {voidError}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <>
         <div>
           <p className="mb-1.5 text-xs font-medium uppercase tracking-wide" style={{ color: C.faint }}>
             Who gets the funds?
@@ -467,6 +670,9 @@ function DisputeCard({
           </p>
         )}
 
+          </>
+        )}
+
         {payoutWarning && (
           <p className="rounded-xl p-3 text-sm" style={{ background: 'rgba(201,162,62,0.08)', border: '1px solid rgba(201,162,62,0.25)', color: '#B5893A' }}>
             {payoutWarning}
@@ -477,9 +683,30 @@ function DisputeCard({
             {error}
           </p>
         )}
-        <Btn onClick={() => void handleSave()} disabled={saving || locked}>
-          {locked ? 'Resolved' : saving ? (selectedRecipient ? 'Sending funds…' : 'Saving…') : 'Save review'}
-        </Btn>
+        {!usesVerdictEngine && selectedRecipient && legacyNeedsTwo && !locked ? (
+          <TwoReviewerFlow
+            program={program}
+            why="Sending everything held to one side needs a second reviewer."
+            candidates={otherReviewers}
+            buildTx={(second) =>
+              resolveDisputeTx(
+                program,
+                acc.listing,
+                rental.publicKey,
+                second,
+                acc.owner,
+                acc.renter,
+                selectedRecipient === 'owner' ? frozen : new BN(0),
+                selectedRecipient === 'renter' ? frozen : new BN(0),
+              )
+            }
+            onDone={() => void finishPayout(selectedRecipient)}
+          />
+        ) : (
+          <Btn onClick={() => void handleSave()} disabled={saving || locked}>
+            {locked ? 'Resolved' : saving ? (selectedRecipient ? 'Sending funds…' : 'Saving…') : 'Save review'}
+          </Btn>
+        )}
       </div>
     </div>
   )
