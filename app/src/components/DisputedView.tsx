@@ -104,7 +104,7 @@ export function DisputedView({
           We'll review the photos from each stage of the rental and look into what happened. Our team will be in touch within 24 hours.
         </p>
         {rental.disputeReason && (
-          <p className="mt-4 rounded-xl p-4 text-sm" style={{ background: 'rgba(184,92,66,0.08)', border: '1px solid rgba(184,92,66,0.28)', color: C.rust }}>
+          <p className="mt-4 rounded-xl p-4 text-sm" style={{ background: 'var(--gs-badge-attention-bg)', border: '1px solid var(--gs-badge-attention-border)', color: C.rust }}>
             "{rental.disputeReason}"
           </p>
         )}
