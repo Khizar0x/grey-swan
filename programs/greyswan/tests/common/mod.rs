@@ -171,6 +171,7 @@ pub fn phase1(svm: &mut LiteSVM, rental: Pubkey, owner: &Keypair) -> Result<(), 
             greyswan::accounts::SubmitPhase1 {
                 rental,
                 timeline: timeline_pda(&rental),
+                config: config_pda(),
                 owner: owner.pubkey(),
                 system_program: system_program::ID,
             },
@@ -188,7 +189,6 @@ pub fn phase2(svm: &mut LiteSVM, rental: Pubkey, renter: &Keypair) -> Result<(),
             greyswan::accounts::SubmitPhase2 {
                 rental,
                 timeline: timeline_pda(&rental),
-                config: config_pda(),
                 renter: renter.pubkey(),
             },
         ),
@@ -256,7 +256,6 @@ pub fn reject_on_arrival_ix(rental: Pubkey, renter: Pubkey) -> Instruction {
         greyswan::accounts::RejectOnArrival {
             rental,
             timeline: timeline_pda(&rental),
-            config: config_pda(),
             dispute: dispute_pda(&rental),
             renter,
             system_program: system_program::ID,

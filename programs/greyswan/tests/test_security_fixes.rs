@@ -71,6 +71,7 @@ fn claim_refund_rejected_after_renter_received_item() {
 #[test]
 fn claim_refund_rejected_once_owner_has_shipped() {
     let mut svm = setup();
+    init_test_config(&mut svm);
     let (owner, renter) = (funded(&mut svm), funded(&mut svm));
     let listing = list_item(&mut svm, &owner, "Canon R5");
     let rental = rent(&mut svm, listing, &renter);

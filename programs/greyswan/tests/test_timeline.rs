@@ -46,7 +46,8 @@ fn phase1_creates_timeline_paid_by_owner() {
     let timeline = read::<RentalTimeline>(&svm, &timeline_pda(&rental));
     assert_eq!(timeline.rental, rental);
     assert_eq!(timeline.shipped_at, START_TIME);
-    assert_eq!(timeline.reserved, [0u8; 64]);
+    assert_eq!(timeline.arrival_deadline, START_TIME + DEFAULT_WINDOW);
+    assert_eq!(timeline.reserved, [0u8; 56]);
 
     let size = 8 + RentalTimeline::INIT_SPACE;
     assert_eq!(size, 113);
@@ -84,26 +85,40 @@ fn arrival_and_rejection_after_window_are_rejected() {
     assert_eq!(state.status, RentalStatus::Active);
 }
 
-#[test]
-fn deadline_is_read_from_config_at_check_time() {
-    // The window comes from the current Config, not a value fixed when the
-    // item shipped, so an admin change applies to rentals already in transit.
-    let (mut svm, admin, _, renter, rental) = shipped();
+fn set_phase2_window(svm: &mut LiteSVM, admin: &Keypair, seconds: i64) {
     send(
-        &mut svm,
+        svm,
         ix(
             greyswan::instruction::UpdateConfig {
-                update: ConfigUpdate { phase2_deadline_secs: Some(2 * 86_400), ..Default::default() },
+                update: ConfigUpdate { phase2_deadline_secs: Some(seconds), ..Default::default() },
             },
             greyswan::accounts::UpdateConfig { config: config_pda(), admin: admin.pubkey() },
         ),
-        &admin,
-        &[&admin],
+        admin,
+        &[admin],
     )
     .unwrap();
+}
 
+#[test]
+fn deadline_is_fixed_when_shipped() {
+    // The window is copied into the timeline at phase 1, so a later Config
+    // change doesn't move the deadline for items already in transit.
+    let (mut svm, admin, owner, renter, in_transit) = shipped();
+    set_phase2_window(&mut svm, &admin, 2 * 86_400);
+
+    // Shipped before the change: still gets the original 5 days.
     warp(&mut svm, 2 * 86_400 + 1);
-    assert_program_err(phase2(&mut svm, rental, &renter), ErrorCode::ArrivalWindowClosed);
+    phase2(&mut svm, in_transit, &renter).unwrap();
+
+    // Shipped after the change: gets the new 2 days.
+    let listing = list_item(&mut svm, &owner, "Fender Strat");
+    let later = rent(&mut svm, listing, &renter);
+    phase1(&mut svm, later, &owner).unwrap();
+    let timeline = read::<RentalTimeline>(&svm, &timeline_pda(&later));
+    assert_eq!(timeline.arrival_deadline, timeline.shipped_at + 2 * 86_400);
+    warp(&mut svm, 2 * 86_400 + 1);
+    assert_program_err(phase2(&mut svm, later, &renter), ErrorCode::ArrivalWindowClosed);
 }
 
 #[test]
@@ -121,7 +136,6 @@ fn renter_cannot_dodge_deadline_with_another_timeline_address() {
             greyswan::accounts::SubmitPhase2 {
                 rental,
                 timeline: empty,
-                config: config_pda(),
                 renter: renter.pubkey(),
             },
         ),
@@ -179,7 +193,6 @@ fn legacy_rental_without_timeline_can_still_arrive() {
             greyswan::accounts::SubmitPhase2 {
                 rental,
                 timeline: timeline_pda(&rental),
-                config: config_pda(),
                 renter,
             },
         ),

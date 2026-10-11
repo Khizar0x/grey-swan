@@ -228,8 +228,11 @@ pub struct RentalTimeline {
     pub rental: Pubkey,
     pub shipped_at: i64,
     pub bump: u8,
+    // shipped_at + phase2_deadline_secs, fixed at shipping so a later Config
+    // change doesn't move the deadline for items already in transit.
+    pub arrival_deadline: i64,
     // Room for later phase timestamps (arrived, return shipped, returned).
-    pub reserved: [u8; 64],
+    pub reserved: [u8; 56],
 }
 
 // Only `Open` for now. New variants must be appended, never reordered (same

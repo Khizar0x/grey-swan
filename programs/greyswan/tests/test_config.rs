@@ -146,17 +146,17 @@ fn rentals_and_resolve_dispute_work_after_migrating_real_config() {
     let (owner, renter) = (funded(&mut svm), funded(&mut svm));
     let listing = list_item(&mut svm, &owner, "Canon R5");
     let rental = rent(&mut svm, listing, &renter);
-    phase1(&mut svm, rental, &owner).unwrap();
 
     // Before migration the legacy 41 bytes don't deserialize as the new
-    // Config, so anything reading Config (arrival, rejection, resolve) is
-    // unavailable until migrate_config runs. This is the deploy-ordering
+    // Config, so anything reading Config (shipping, resolve, update_config)
+    // is unavailable until migrate_config runs. This is the deploy-ordering
     // risk: migrate immediately after upgrading the program.
-    let err = phase2(&mut svm, rental, &renter).unwrap_err();
+    let err = phase1(&mut svm, rental, &owner).unwrap_err();
     assert!(err.contains("Custom(3003)"), "expected AccountDidNotDeserialize, got {err}");
 
     send_as(&mut svm, migrate_ix(admin), admin).unwrap();
 
+    phase1(&mut svm, rental, &owner).unwrap();
     phase2(&mut svm, rental, &renter).unwrap();
     phase3(&mut svm, rental, &renter).unwrap();
     phase4(&mut svm, rental, &owner).unwrap();

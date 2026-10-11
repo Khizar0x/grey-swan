@@ -143,6 +143,7 @@ fn test_flag_return_issue() {
                 rental: rental.pubkey(),
                 owner: owner.pubkey(),
                 timeline: common::timeline_pda(&rental.pubkey()),
+                config: common::config_pda(),
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
@@ -163,7 +164,6 @@ fn test_flag_return_issue() {
             greyswan::accounts::SubmitPhase2 {
                 rental: rental.pubkey(),
                 timeline: common::timeline_pda(&rental.pubkey()),
-                config: common::config_pda(),
                 renter: renter.pubkey(),
             }
             .to_account_metas(None),
@@ -321,7 +321,6 @@ fn test_reject_on_arrival() {
                 dispute: common::dispute_pda(&rental.pubkey()),
                 system_program: system_program::ID,
                 timeline: common::timeline_pda(&rental.pubkey()),
-                config: common::config_pda(),
                 renter: renter.pubkey(),
             }
             .to_account_metas(None),
@@ -345,6 +344,7 @@ fn test_reject_on_arrival() {
                 rental: rental.pubkey(),
                 owner: owner.pubkey(),
                 timeline: common::timeline_pda(&rental.pubkey()),
+                config: common::config_pda(),
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
@@ -371,7 +371,6 @@ fn test_reject_on_arrival() {
                 dispute: common::dispute_pda(&rental.pubkey()),
                 system_program: system_program::ID,
                 timeline: common::timeline_pda(&rental.pubkey()),
-                config: common::config_pda(),
                 renter: renter.pubkey(),
             }
             .to_account_metas(None),
@@ -497,6 +496,7 @@ fn test_resolve_dispute() {
                 rental: rental.pubkey(),
                 owner: owner.pubkey(),
                 timeline: common::timeline_pda(&rental.pubkey()),
+                config: common::config_pda(),
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
@@ -520,7 +520,6 @@ fn test_resolve_dispute() {
                 dispute: common::dispute_pda(&rental.pubkey()),
                 system_program: system_program::ID,
                 timeline: common::timeline_pda(&rental.pubkey()),
-                config: common::config_pda(),
                 renter: renter.pubkey(),
             }
             .to_account_metas(None),

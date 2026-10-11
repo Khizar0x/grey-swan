@@ -7,16 +7,12 @@ use crate::state::{Config, HandoverPhase, Rental, RentalStatus, RentalTimeline};
 /// struct, so a caller can't dodge the deadline by leaving it out: it is
 /// either our account (enforce) or an address nothing was ever created at,
 /// which only happens for rentals shipped before timelines existed.
-pub(crate) fn check_arrival_deadline(timeline: &AccountInfo, config: &Config) -> Result<()> {
+pub(crate) fn check_arrival_deadline(timeline: &AccountInfo) -> Result<()> {
     if timeline.owner == &crate::ID {
         let data = timeline.try_borrow_data()?;
         let timeline = RentalTimeline::try_deserialize(&mut &data[..])?;
-        let deadline = timeline
-            .shipped_at
-            .checked_add(config.phase2_deadline_secs)
-            .ok_or(crate::error::ErrorCode::MathOverflow)?;
         require!(
-            Clock::get()?.unix_timestamp <= deadline,
+            Clock::get()?.unix_timestamp <= timeline.arrival_deadline,
             crate::error::ErrorCode::ArrivalWindowClosed
         );
     } else {
@@ -41,6 +37,10 @@ pub struct SubmitPhase1<'info> {
         bump
     )]
     pub timeline: Account<'info, RentalTimeline>,
+
+    // Read once here to fix this rental's arrival deadline.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
 
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -83,10 +83,14 @@ pub fn handle_submit_phase1(
     rental.current_phase = HandoverPhase::BeforeSending;
 
     let rental_key = rental.key();
+    let now = Clock::get()?.unix_timestamp;
     let timeline = &mut ctx.accounts.timeline;
     timeline.rental = rental_key;
-    timeline.shipped_at = Clock::get()?.unix_timestamp;
+    timeline.shipped_at = now;
     timeline.bump = ctx.bumps.timeline;
+    timeline.arrival_deadline = now
+        .checked_add(ctx.accounts.config.phase2_deadline_secs)
+        .ok_or(crate::error::ErrorCode::MathOverflow)?;
 
     Ok(())
 }
@@ -101,9 +105,6 @@ pub struct SubmitPhase2<'info> {
     /// CHECK: may not exist (legacy rentals); see check_arrival_deadline.
     #[account(seeds = [TIMELINE_SEED, rental.key().as_ref()], bump)]
     pub timeline: UncheckedAccount<'info>,
-
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, Config>,
 
     pub renter: Signer<'info>,
 }
@@ -124,7 +125,7 @@ pub fn handle_submit_phase2(ctx: Context<SubmitPhase2>, photos: String) -> Resul
     );
     require!(!photos.is_empty(), crate::error::ErrorCode::PhotosLinkRequired);
     require!(photos.len() <= 200, crate::error::ErrorCode::PhotosLinkTooLong);
-    check_arrival_deadline(&ctx.accounts.timeline, &ctx.accounts.config)?;
+    check_arrival_deadline(&ctx.accounts.timeline)?;
 
     let rental = &mut ctx.accounts.rental;
     rental.phase2_photos = photos;

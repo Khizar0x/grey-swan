@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
+use crate::constants::{DISPUTE_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
 use crate::instructions::handover::check_arrival_deadline;
 use crate::state::{
     Config, Dispute, DisputeKind, DisputeStatus, HandoverPhase, Listing, Rental, RentalStatus,
@@ -78,9 +78,6 @@ pub struct RejectOnArrival<'info> {
     #[account(seeds = [TIMELINE_SEED, rental.key().as_ref()], bump)]
     pub timeline: UncheckedAccount<'info>,
 
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, Config>,
-
     #[account(
         init,
         payer = renter,
@@ -121,7 +118,7 @@ pub fn handle_reject_on_arrival(
         reason.len() <= MAX_DISPUTE_REASON_LEN,
         crate::error::ErrorCode::DisputeReasonTooLong
     );
-    check_arrival_deadline(&ctx.accounts.timeline, &ctx.accounts.config)?;
+    check_arrival_deadline(&ctx.accounts.timeline)?;
 
     let now = Clock::get()?.unix_timestamp;
     let rental = &mut ctx.accounts.rental;
