@@ -3,70 +3,34 @@ import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey } from '@solana/web3.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { useOutletContext } from 'react-router-dom'
 import { Btn } from '../components/atoms'
+import { DisputeAnswersSummary } from '../components/DisputeAnswersSummary'
+import { PhaseGallery } from '../components/PhaseGallery'
+import { RetryImage } from '../components/RetryImage'
 import { ReviewerResolvePanel } from '../components/admin/ReviewerResolvePanel'
 import { TwoReviewerFlow } from '../components/admin/TwoReviewerFlow'
 import { type DisputeNote, type DisputeReviewStatus, fetchDisputeNotes, saveDisputeNote } from '../lib/adminApi'
 import { useAuthContext } from '../lib/AuthContext'
+import { type DisputeAnswers, fetchDisputeAnswers } from '../lib/disputeAnswersApi'
 import { legacyResolveNeedsTwo } from '../lib/disputeMath'
 import { formatDeadlineDate } from '../lib/deadlines'
 import { formatSol } from '../lib/format'
 import type { Greyswan } from '../idl/greyswan.ts'
-import { gatewayUrl } from '../lib/ipfs'
 import { enumKey } from '../lib/listing'
+import { type AdminContext } from './AdminShell'
+import { type ConfigAccount, type DisputeAccount, disputePathLabel, groupOf, type Role, type StageGroup, stageOf } from '../lib/adminDisputes'
 import { resolveDispute, resolveDisputeTx, voidVerdict } from '../lib/mutations'
 import { useProgram } from '../lib/program'
 import { C, FONT_HEAD, INPUT_STYLE } from '../lib/theme'
 import { useListingsByKeys } from '../lib/useListingsByKeys'
+import { usePhotoUrls } from '../lib/usePhotoUrls'
 import type { RentalAccountEntry } from '../lib/useRentals'
 import { useRentals } from '../lib/useRentals'
 import { withTimeout } from '../lib/withTimeout'
 
 function truncate(pubkey: string): string {
   return `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`
-}
-
-type DisputeAccount = Awaited<ReturnType<Program<Greyswan>['account']['dispute']['fetch']>>
-type ConfigAccount = Awaited<ReturnType<Program<Greyswan>['account']['config']['fetch']>>
-type Role = 'admin' | 'reviewer'
-
-// Where a dispute stands, in the words a reviewer needs. `group` decides which
-// section of the page it sits in.
-type StageGroup = 'needs' | 'waiting' | 'posted'
-function stageOf(kind: Record<string, object>, dispute: DisputeAccount | null): { label: string; group: StageGroup } {
-  if (!dispute) return { label: 'Older dispute', group: 'needs' }
-  const status = enumKey(dispute.status)
-  const isDamage = enumKey(kind) === 'returnIssue'
-  switch (status) {
-    case 'appealed':
-      return { label: 'Appealed', group: 'needs' }
-    case 'voided':
-      return { label: 'First review set aside', group: 'needs' }
-    case 'verdictPosted':
-      return { label: 'First review posted', group: 'posted' }
-    case 'open':
-      return isDamage ? { label: 'Waiting for the first review', group: 'waiting' } : { label: 'Needs a reviewer', group: 'needs' }
-    default:
-      return { label: status, group: 'needs' }
-  }
-}
-
-function disputePathLabel(kind: Record<string, object>): string {
-  switch (enumKey(kind)) {
-    case 'returnIssue':
-      return 'Owner flagged after return'
-    case 'arrivalIssue':
-      return 'Renter rejected on arrival'
-    case 'notReturned':
-      return 'Owner says it was not returned'
-    case 'returnNotReceived':
-      return 'Owner says the return never arrived'
-    case 'adminOpened':
-      return 'Opened by the team'
-    default:
-      return enumKey(kind)
-  }
 }
 
 // Off-chain review status for the admin's own use — deliberately not part
@@ -81,109 +45,32 @@ const REVIEW_LABEL: Record<DisputeReviewStatus, string> = {
   resolved: 'Resolved',
 }
 
-type AdminCheck = 'checking' | 'allowed' | 'denied'
-
-export function Admin() {
+export function AdminDisputes() {
   const program = useProgram()
-  const { publicKey, wallet, connecting } = useWallet()
-  const { token, signedIn, signingIn, error: authError, signIn } = useAuthContext()
+  const { publicKey } = useWallet()
+  const { token } = useAuthContext()
+  const { config, role } = useOutletContext<AdminContext>()
 
-  const [adminCheck, setAdminCheck] = useState<AdminCheck>('checking')
-  const [config, setConfig] = useState<ConfigAccount | null>(null)
-  const [role, setRole] = useState<Role | null>(null)
   const [disputes, setDisputes] = useState<Map<string, DisputeAccount>>(new Map())
   const [reloadKey, setReloadKey] = useState(0)
-
-  // The entire access control for this page: read the Config PDA's `admin`
-  // field on-chain and compare it to the connected wallet. No separate
-  // login, nothing client-side to trust beyond what's actually on-chain.
-  //
-  // publicKey starts out null on every fresh page load/refresh even when a
-  // wallet is about to auto-reconnect — wallet-adapter's autoConnect is
-  // async (it only flips `connected`/`publicKey` after an effect chain runs
-  // post-mount), so a direct visit to /admin briefly looks identical to
-  // "no wallet." Treating that as an immediate denial fires the redirect
-  // below before autoConnect ever gets a chance to resolve the real wallet
-  // — bouncing a legitimately-connected admin home. So a missing publicKey
-  // only ever means "still checking," never "denied" — the fallback timer
-  // further down is what actually settles a genuinely-disconnected visit.
-  useEffect(() => {
-    if (!publicKey) return
-    let cancelled = false
-
-    const [configPda] = PublicKey.findProgramAddressSync([Buffer.from('config')], program.programId)
-
-    // A single dropped RPC request here is exactly the same class of bug
-    // the wallet-resolve race was: a transient, recoverable condition
-    // treated as a permanent verdict. publicKey resolving correctly but
-    // this one-shot fetch hiccuping once would previously deny a genuine
-    // admin outright, with no way back short of reloading and hoping the
-    // next attempt happens to land. Retries before ever committing to
-    // "denied" — same shape as ipfs.ts's fetchWithRetry and useRentals'
-    // settle-delay retries elsewhere in this codebase.
-    const attempts = [0, 800, 2000]
-    ;(async () => {
-      let lastErr: unknown
-      for (const delay of attempts) {
-        if (cancelled) return
-        if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
-        if (cancelled) return
-        try {
-          const cfg = await program.account.config.fetch(configPda)
-          if (cancelled) return
-          // The admin or any reviewer on Config may use this page; only the
-          // admin sees the admin-only controls (setting a verdict aside).
-          const isAdmin = cfg.admin.equals(publicKey)
-          const isReviewer = cfg.reviewers.slice(0, cfg.reviewerCount).some((r) => r.equals(publicKey))
-          setConfig(cfg)
-          setRole(isAdmin ? 'admin' : isReviewer ? 'reviewer' : null)
-          setAdminCheck(isAdmin || isReviewer ? 'allowed' : 'denied')
-          return
-        } catch (err) {
-          lastErr = err
-        }
-      }
-      console.error('Admin config fetch failed after retries:', lastErr)
-      if (!cancelled) setAdminCheck('denied')
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [program, publicKey])
-
-  // Bounded fallback: distinguishes "actively reconnecting" from "nothing
-  // left to wait for" rather than a single fixed timeout from page load.
-  // A wallet account's *first-ever* silent reconnect to this origin can
-  // take longer than a few seconds (especially right after importing it),
-  // and a flat timer that starts counting from mount doesn't know the
-  // difference between "still working" and "already gave up" — it would
-  // cut a slow-but-genuine reconnect off just the same as a truly absent
-  // one. No wallet selected at all -> nothing will ever reconnect, deny
-  // now. Actively connecting -> keep waiting, no countdown yet. Otherwise
-  // (selected but idle, not connecting, no publicKey) -> give it a bounded
-  // window from *that* point before giving up.
-  useEffect(() => {
-    if (publicKey) return
-    if (!wallet) {
-      setAdminCheck('denied')
-      return
-    }
-    if (connecting) return
-    const timer = setTimeout(() => {
-      setAdminCheck((prev) => (prev === 'checking' ? 'denied' : prev))
-    }, 5000)
-    return () => clearTimeout(timer)
-  }, [publicKey, wallet, connecting])
+  const [resolvedOpen, setResolvedOpen] = useState(false)
 
   const { rentals, loading: rentalsLoading } = useRentals()
-  const disputed = useMemo(() => rentals.filter((r) => enumKey(r.account.status) === 'disputed'), [rentals])
+  // Open disputes, plus rentals that were settled after one (shown muted).
+  const disputed = useMemo(
+    () =>
+      rentals.filter((r) => {
+        const status = enumKey(r.account.status)
+        return status === 'disputed' || (status === 'resolved' && enumKey(r.account.disputeKind) !== 'none')
+      }),
+    [rentals],
+  )
+  const activeCount = disputed.filter((r) => enumKey(r.account.status) === 'disputed').length
   const listingsMap = useListingsByKeys(disputed.map((r) => r.account.listing))
 
   // One Dispute account per rental disputed since they were introduced; older
   // disputes have none and are listed as such.
   useEffect(() => {
-    if (adminCheck !== 'allowed') return
     let cancelled = false
     program.account.dispute
       .all()
@@ -194,13 +81,13 @@ export function Admin() {
     return () => {
       cancelled = true
     }
-  }, [adminCheck, program, reloadKey])
+  }, [program, reloadKey])
 
   const [notes, setNotes] = useState<Map<string, DisputeNote>>(new Map())
   const [notesError, setNotesError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (adminCheck !== 'allowed' || !token) return
+    if (!token) return
     let cancelled = false
     fetchDisputeNotes(token)
       .then((rows) => {
@@ -212,38 +99,12 @@ export function Admin() {
     return () => {
       cancelled = true
     }
-  }, [adminCheck, token])
-
-  // Render nothing while the check is in flight or once it's failed — no
-  // flash of admin content, no "you're not allowed" message, just a redirect.
-  if (adminCheck === 'checking') return null
-  if (adminCheck === 'denied') return <Navigate to="/" replace />
-
-  if (!signedIn) {
-    return (
-      <div className="mx-auto max-w-md px-4 py-20 text-center sm:px-6">
-        <h1 className="mb-2 text-2xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-          Sign in to continue
-        </h1>
-        <p className="mb-8 text-sm leading-relaxed" style={{ color: C.muted }}>
-          We need your wallet to sign a message proving you hold it before showing dispute details.
-        </p>
-        {authError && (
-          <p className="mb-4 text-sm" style={{ color: C.rust }}>
-            {authError}
-          </p>
-        )}
-        <Btn onClick={() => void signIn()} disabled={signingIn}>
-          {signingIn ? 'Waiting for signature…' : 'Sign in with wallet'}
-        </Btn>
-      </div>
-    )
-  }
+  }, [token])
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
       <h1 className="mb-2 text-3xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-        Rentals needing review
+        Disputes
       </h1>
       <p className="mb-8 text-sm" style={{ color: C.faint }}>
         Rentals that were flagged, rejected or timed out, grouped by where they stand.
@@ -259,25 +120,41 @@ export function Admin() {
           {notesError}
         </p>
       )}
-      {!rentalsLoading && disputed.length === 0 && (
+      {!rentalsLoading && activeCount === 0 && (
         <p className="text-sm" style={{ color: C.faint }}>
           Nothing needs review right now.
         </p>
       )}
 
       {GROUPS.map((g) => {
-        const rows = disputed.filter((r) => stageOf(r.account.disputeKind, disputes.get(r.publicKey.toBase58()) ?? null).group === g.key)
+        const rows = disputed.filter((r) => groupOf(r, disputes.get(r.publicKey.toBase58()) ?? null) === g.key)
         if (rows.length === 0) return null
         return (
-          <section key={g.key} className="mb-8">
-            <h2 className="mb-1 text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-              {g.title} ({rows.length})
-            </h2>
-            <p className="mb-3 text-xs" style={{ color: C.faint }}>
-              {g.hint}
-            </p>
-            <div className="flex flex-col gap-4">
-              {rows.map((r) => (
+          <section
+            key={g.key}
+            className="mb-8 rounded-2xl p-4 sm:p-5"
+            style={{ background: g.bg, border: `1px solid ${g.border}`, borderLeft: `6px solid ${g.accent}`, opacity: g.key === 'resolved' ? 0.9 : 1 }}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                  {g.title}
+                </h2>
+                <p className="mt-0.5 text-xs" style={{ color: C.muted }}>
+                  {g.hint}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold" style={{ background: g.bg, border: `1px solid ${g.border}`, color: g.accent }}>
+                {rows.length}
+              </span>
+            </div>
+            {g.key === 'resolved' && (
+              <button type="button" onClick={() => setResolvedOpen((o) => !o)} className="mb-3 text-xs font-semibold underline" style={{ color: C.gold }}>
+                {resolvedOpen ? 'Hide resolved' : 'Show resolved'}
+              </button>
+            )}
+            <div className="flex flex-col gap-3">
+              {(g.key === 'resolved' && !resolvedOpen ? [] : rows).map((r) => (
                 <DisputeCard
                   key={r.publicKey.toBase58()}
                   program={program}
@@ -287,6 +164,8 @@ export function Admin() {
                   config={config}
                   role={role}
                   itemName={listingsMap.get(r.account.listing.toBase58())?.itemName ?? 'Item'}
+                  listingPhotos={listingsMap.get(r.account.listing.toBase58())?.photos}
+                  tone={g}
                   existingNote={notes.get(r.publicKey.toBase58())}
                   token={token!}
                   onSaved={(row) => setNotes((prev) => new Map(prev).set(row.rental_pubkey, row))}
@@ -301,11 +180,100 @@ export function Admin() {
   )
 }
 
-const GROUPS: { key: StageGroup; title: string; hint: string }[] = [
-  { key: 'needs', title: 'Needs a reviewer', hint: 'Appeals, set-aside reviews, and disputes the automatic review does not handle.' },
-  { key: 'waiting', title: 'Waiting for the first review', hint: 'Damage reports the automatic review has not looked at yet. A reviewer can still decide them.' },
-  { key: 'posted', title: 'First review posted', hint: 'The appeal window is running. Anyone can release the funds once it closes.' },
+// Each section has its own tint, drawn from the three status colours: rust for
+// attention, amber for waiting, green for settled.
+interface GroupTone {
+  key: StageGroup
+  title: string
+  hint: string
+  accent: string
+  bg: string
+  border: string
+}
+const ATTENTION = { accent: C.rust, bg: 'var(--gs-badge-attention-bg)', border: 'var(--gs-badge-attention-border)' }
+const PENDING = { accent: 'var(--gs-badge-pending-color)', bg: 'var(--gs-badge-pending-bg)', border: 'var(--gs-badge-pending-border)' }
+const POSITIVE = { accent: C.green, bg: 'var(--gs-badge-positive-bg)', border: 'var(--gs-badge-positive-border)' }
+const GROUPS: GroupTone[] = [
+  { key: 'needs', title: 'Needs a reviewer', hint: 'Appeals, set-aside reviews, and disputes the automatic review does not handle.', ...ATTENTION },
+  { key: 'waiting', title: 'Waiting for the first review', hint: 'Damage reports the automatic review has not looked at yet. A reviewer can still decide them.', ...PENDING },
+  { key: 'posted', title: 'First review posted', hint: 'The appeal window is running. Anyone can release the funds once it closes.', ...PENDING },
+  { key: 'resolved', title: 'Resolved', hint: 'Settled. Open a card to see what was decided on.', ...POSITIVE },
 ]
+
+// Everything a reviewer needs to decide fairly, in one place: what each side
+// said (the same summary the renter and owner see) and every handover photo.
+function Evidence({ rentalPubkey, token, acc }: { rentalPubkey: string; token: string; acc: RentalAccountEntry['account'] }) {
+  const [answers, setAnswers] = useState<DisputeAnswers | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchDisputeAnswers(rentalPubkey, token)
+      .then((a) => {
+        if (!cancelled) setAnswers(a)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rentalPubkey, token])
+
+  const phases: [string, string][] = [
+    ['Phase 1: before sending', acc.phase1Photos],
+    ['Phase 2: on arrival', acc.phase2Photos],
+    ['Phase 3: before returning', acc.phase3Photos],
+    ['Phase 4: on return', acc.phase4Photos],
+  ]
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
+        What each side said
+      </p>
+      {error ? (
+        <p className="text-sm" style={{ color: C.rust }}>
+          {error}
+        </p>
+      ) : !answers ? (
+        <p className="text-sm" style={{ color: C.faint }}>
+          Loading…
+        </p>
+      ) : !answers.owner && !answers.renter ? (
+        <p className="text-sm" style={{ color: C.muted }}>
+          Nobody has added answers for this one yet.
+        </p>
+      ) : (
+        <DisputeAnswersSummary answers={answers} />
+      )}
+
+      <p className="mt-2 text-xs font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
+        Photos from each stage
+      </p>
+      {phases.every(([, cid]) => !cid) ? (
+        <p className="text-sm" style={{ color: C.muted }}>
+          No handover photos were added.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {phases.map(([label, cid]) => (
+            <PhaseGallery key={label} title={label} manifestCid={cid} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ListingThumb({ photos, name }: { photos: string | undefined; name: string }) {
+  const { urls } = usePhotoUrls(photos)
+  return (
+    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl" style={{ background: C.surface2, border: `1px solid ${C.border}` }}>
+      {urls[0] && <RetryImage src={urls[0]} alt={name} className="h-full w-full object-cover" />}
+    </div>
+  )
+}
 
 function DisputeCard({
   program,
@@ -315,6 +283,8 @@ function DisputeCard({
   config,
   role,
   itemName,
+  listingPhotos,
+  tone,
   existingNote,
   token,
   onSaved,
@@ -327,6 +297,8 @@ function DisputeCard({
   config: ConfigAccount | null
   role: Role | null
   itemName: string
+  listingPhotos: string | undefined
+  tone: GroupTone
   existingNote: DisputeNote | undefined
   token: string
   onSaved: (note: DisputeNote) => void
@@ -369,13 +341,6 @@ function DisputeCard({
   const rentalPubkey = rental.publicKey.toBase58()
   const frozen = acc.totalRentalCost.add(acc.depositAmount)
 
-  const phases: [string, string][] = [
-    ['Phase 1: before sending', acc.phase1Photos],
-    ['Phase 2: on arrival', acc.phase2Photos],
-    ['Phase 3: before returning', acc.phase3Photos],
-    ['Phase 4: on return', acc.phase4Photos],
-  ]
-
   // Already resolved from a *previous* session (off-chain status loaded as
   // "resolved" without this component having driven a payout itself) — the
   // off-chain status only ever becomes "resolved" as a result of a
@@ -387,7 +352,9 @@ function DisputeCard({
   const [decided, setDecided] = useState(false)
   const [voiding, setVoiding] = useState(false)
   const [voidError, setVoidError] = useState<string | null>(null)
-  const locked = paidTo !== null || resolvedElsewhere || decided
+  const onChainResolved = enumKey(acc.status) === 'resolved'
+  const locked = paidTo !== null || resolvedElsewhere || decided || onChainResolved
+  const [expanded, setExpanded] = useState(false)
 
   const kindKey = enumKey(acc.disputeKind)
   const stage = stageOf(acc.disputeKind, dispute)
@@ -441,7 +408,7 @@ function DisputeCard({
     setVoiding(true)
     setVoidError(null)
     try {
-      await withTimeout(voidVerdict(program, rental.publicKey, acc.owner, acc.renter), 30_000)
+      await withTimeout(voidVerdict(program, rental.publicKey, acc.owner, acc.renter))
       onChanged()
       setDecided(true)
     } catch (err) {
@@ -465,8 +432,8 @@ function DisputeCard({
         // happened, and the error below is the on-chain failure itself,
         // not a generic message papering over it.
         //
-        // Longer timeout than withTimeout's 10s default (used everywhere
-        // else in the app) specifically for this one call: this is a real,
+        // The wallet timeout is long (three minutes, see withTimeout.ts)
+        // because of this one call, among others: this is a real,
         // no-undo money transfer with an explicit "can't be undone" warning
         // right above the button, so an attentive admin reading the wallet
         // popup's own confirmation before approving can easily use up most
@@ -481,7 +448,6 @@ function DisputeCard({
         // succeeded risks a real NotDisputed rejection on the second try.
         await withTimeout(
           resolveDispute(program, rental.account.listing, rental.publicKey, adminPubkey, acc.owner, acc.renter, ownerAmount, renterAmount),
-          30_000,
         )
         // Funds have already moved on-chain at this point — true
         // regardless of what happens next, so the UI reflects it even if
@@ -498,66 +464,82 @@ function DisputeCard({
     }
   }
 
+  const stageStyle = onChainResolved ? POSITIVE : tone
   return (
-    <div className="rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <h3 className="text-base font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-          {itemName}
-        </h3>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={REVIEW_STYLE[status]}>
-            {REVIEW_LABEL[status]}
+    <div
+      className="rounded-2xl p-3 shadow-sm sm:p-4"
+      style={{ background: C.surface, border: `1px solid ${C.border}`, opacity: onChainResolved && !expanded ? 0.8 : 1 }}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-3 text-left"
+      >
+        <ListingThumb photos={listingPhotos} name={itemName} />
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-bold leading-tight" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+              {itemName}
+            </span>
+            <span
+              className="rounded-full px-2 py-0.5 text-[11px] font-bold"
+              style={{ background: stageStyle.bg, color: stageStyle.accent, border: `1px solid ${stageStyle.border}` }}
+            >
+              {onChainResolved ? 'Resolved' : stage.label}
+            </span>
           </span>
-          <span className="text-xs font-medium" style={{ color: C.muted }}>
-            {stage.label}
+          <span className="mt-0.5 block truncate text-sm" style={{ color: C.muted }}>
+            {acc.disputeReason ? `"${acc.disputeReason}"` : disputePathLabel(acc.disputeKind)}
           </span>
-        </div>
-      </div>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="block text-sm font-bold" style={{ color: C.cream }}>
+            {formatSol(frozen)}
+          </span>
+          <span className="block text-[11px]" style={{ color: C.faint }}>
+            held
+          </span>
+        </span>
+        <span className="shrink-0 text-xs font-semibold" style={{ color: C.gold }} aria-hidden>
+          {expanded ? 'Close' : 'Open'}
+        </span>
+      </button>
 
-      <div className="mb-3 grid grid-cols-2 gap-3 text-xs">
+      {expanded && (
+        <>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-full px-2.5 py-1 font-bold" style={REVIEW_STYLE[status]}>
+          {REVIEW_LABEL[status]}
+        </span>
+        <span style={{ color: C.muted }}>{disputePathLabel(acc.disputeKind)}</span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl p-3 text-xs" style={{ background: C.subtleBg, border: `1px solid ${C.border}` }}>
         <div>
           <span className="block uppercase tracking-wide" style={{ color: C.faint }}>
             Renter
           </span>
-          <span style={{ color: C.muted }}>{truncate(acc.renter.toBase58())}</span>
+          <span className="font-mono" style={{ color: C.muted }}>{truncate(acc.renter.toBase58())}</span>
         </div>
         <div>
           <span className="block uppercase tracking-wide" style={{ color: C.faint }}>
             Owner
           </span>
-          <span style={{ color: C.muted }}>{truncate(acc.owner.toBase58())}</span>
-        </div>
-        <div>
-          <span className="block uppercase tracking-wide" style={{ color: C.faint }}>
-            Flagged via
-          </span>
-          <span style={{ color: C.muted }}>{disputePathLabel(acc.disputeKind)}</span>
-        </div>
-        <div>
-          <span className="block uppercase tracking-wide" style={{ color: C.faint }}>
-            Frozen amount
-          </span>
-          <span className="font-bold" style={{ color: C.cream }}>{formatSol(frozen)}</span>
+          <span className="font-mono" style={{ color: C.muted }}>{truncate(acc.owner.toBase58())}</span>
         </div>
       </div>
 
       {acc.disputeReason && (
-        <p className="mb-4 rounded-xl p-3 text-sm" style={{ background: 'rgba(184,92,66,0.08)', border: '1px solid rgba(184,92,66,0.28)', color: C.rust }}>
+        <p className="mt-3 rounded-xl p-3 text-sm" style={{ background: 'var(--gs-badge-attention-bg)', border: '1px solid var(--gs-badge-attention-border)', color: C.rust }}>
           "{acc.disputeReason}"
         </p>
       )}
 
-      <div className="mb-4 flex flex-wrap gap-4 text-xs">
-        {phases.map(([label, cid]) =>
-          cid ? (
-            <a key={label} href={gatewayUrl(cid)} target="_blank" rel="noreferrer" className="underline" style={{ color: C.gold }}>
-              {label}
-            </a>
-          ) : null,
-        )}
+      <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${C.border}` }}>
+        <Evidence rentalPubkey={rentalPubkey} token={token} acc={acc} />
       </div>
 
-      <div className="flex flex-col gap-3 pt-4" style={{ borderTop: `1px solid ${C.border}` }}>
+      <div className="mt-4 flex flex-col gap-3 pt-4" style={{ borderTop: `1px solid ${C.border}` }}>
         <div>
           <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide" style={{ color: C.faint }}>
             Review status
@@ -704,10 +686,12 @@ function DisputeCard({
           />
         ) : (
           <Btn onClick={() => void handleSave()} disabled={saving || locked}>
-            {locked ? 'Resolved' : saving ? (selectedRecipient ? 'Sending funds…' : 'Saving…') : 'Save review'}
+            {locked ? 'Resolved' : saving ? (selectedRecipient ? 'Waiting for your wallet to approve…' : 'Saving…') : 'Save review'}
           </Btn>
         )}
       </div>
+        </>
+      )}
     </div>
   )
 }

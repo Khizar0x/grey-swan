@@ -1,7 +1,9 @@
 import { Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { AccountSettings } from './pages/AccountSettings'
-import { Admin } from './pages/Admin'
+import { AdminDisputes } from './pages/Admin'
+import { AdminOverview } from './pages/AdminOverview'
+import { AdminShell } from './pages/AdminShell'
 import { DigitalCloud } from './pages/DigitalCloud'
 import { EditListing } from './pages/EditListing'
 import { Home } from './pages/Home'
@@ -27,7 +29,10 @@ function App() {
         <Route path="messages/:rentalPubkey" element={<Messages />} />
         <Route path="rental/:pubkey" element={<RentalHandover />} />
         <Route path="account" element={<AccountSettings />} />
-        <Route path="admin" element={<Admin />} />
+        <Route path="admin" element={<AdminShell />}>
+          <Route index element={<AdminOverview />} />
+          <Route path="disputes" element={<AdminDisputes />} />
+        </Route>
       </Route>
     </Routes>
   )

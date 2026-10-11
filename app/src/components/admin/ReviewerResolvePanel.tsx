@@ -51,7 +51,7 @@ export function ReviewerResolvePanel({
     try {
       // Same longer wallet timeout as the legacy payout: a real money
       // decision that a reviewer reads carefully before approving.
-      await withTimeout(reviewerResolve(program, acc.listing, rental.publicKey, acc.owner, acc.renter, reviewer, ownerBps), 30_000)
+      await withTimeout(reviewerResolve(program, acc.listing, rental.publicKey, acc.owner, acc.renter, reviewer, ownerBps))
       onResolved()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -72,7 +72,7 @@ export function ReviewerResolvePanel({
       <div>
         <label htmlFor={`split-${rental.publicKey.toBase58()}`} className="mb-1.5 flex justify-between text-xs font-medium uppercase tracking-wide" style={{ color: C.faint }}>
           <span>Deposit to the owner</span>
-          <span style={{ color: C.cream }}>{percent}%</span>
+          <span className="text-sm font-bold" style={{ color: C.cream }}>{percent}%</span>
         </label>
         <input
           id={`split-${rental.publicKey.toBase58()}`}
@@ -86,21 +86,36 @@ export function ReviewerResolvePanel({
           className="w-full"
           style={{ accentColor: C.primary }}
         />
-        <div className="mt-2 grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <span className="block text-xs" style={{ color: C.faint }}>
+        <div
+          className="mt-3 flex h-3 w-full overflow-hidden rounded-full"
+          style={{ background: C.border }}
+          role="img"
+          aria-label={`${percent}% of the deposit to the owner, ${100 - percent}% to the renter`}
+        >
+          <div className="h-full transition-[width]" style={{ width: `${percent}%`, background: C.primary }} />
+          <div className="h-full transition-[width]" style={{ width: `${100 - percent}%`, background: C.trust }} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3" aria-live="polite">
+          <div className="rounded-xl p-3" style={{ background: C.accentSoft, border: `${percent >= 50 ? 2 : 1}px solid ${C.primary}` }}>
+            <span className="block text-xs font-medium uppercase tracking-wide" style={{ color: C.faint }}>
               Owner receives
             </span>
-            <span className="font-bold" style={{ color: C.cream }}>
+            <span className="block text-xl font-bold" style={{ color: C.cream }}>
               {formatLamports(split.toOwner)}
             </span>
+            <span className="text-xs font-semibold" style={{ color: C.primary }}>
+              {percent}% of the deposit
+            </span>
           </div>
-          <div>
-            <span className="block text-xs" style={{ color: C.faint }}>
+          <div className="rounded-xl p-3" style={{ background: C.trustSoft, border: `${percent <= 50 ? 2 : 1}px solid ${C.trust}` }}>
+            <span className="block text-xs font-medium uppercase tracking-wide" style={{ color: C.faint }}>
               Renter receives
             </span>
-            <span className="font-bold" style={{ color: C.cream }}>
+            <span className="block text-xl font-bold" style={{ color: C.cream }}>
               {formatLamports(split.toRenter)}
+            </span>
+            <span className="text-xs font-semibold" style={{ color: C.trust }}>
+              {100 - percent}% of the deposit
             </span>
           </div>
         </div>

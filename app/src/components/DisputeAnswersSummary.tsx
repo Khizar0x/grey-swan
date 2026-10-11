@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { damageTypeLabel, type DisputeAnswers } from '../lib/disputeAnswersApi'
 import { shotLabel } from '../lib/handoverShots'
 import { C } from '../lib/theme'
 import { usePhotoUrls } from '../lib/usePhotoUrls'
+import { Lightbox } from './Lightbox'
 import { RetryImage } from './RetryImage'
 
 const YNU_TEXT = { yes: 'Yes', no: 'No', unsure: 'Not sure' } as const
@@ -20,6 +22,7 @@ function Row({ label, value }: { label: string; value: string }) {
 // What each side told us, read-only. Shown to the two parties and reviewers.
 export function DisputeAnswersSummary({ answers }: { answers: DisputeAnswers }) {
   const { urls, shots } = usePhotoUrls(answers.owner?.photosCid)
+  const [open, setOpen] = useState<number | null>(null)
   if (!answers.owner && !answers.renter) return null
   return (
     <div className="flex flex-col gap-5 text-left">
@@ -29,18 +32,25 @@ export function DisputeAnswersSummary({ answers }: { answers: DisputeAnswers }) 
             The owner reported
           </p>
           <Row label="Where" value={answers.owner.areas.map(shotLabel).join(', ')} />
-          <Row label="What" value={`${damageTypeLabel(answers.owner.damageType)}, ${answers.owner.severity}`} />
+          <Row label="Damage type" value={damageTypeLabel(answers.owner.damageType)} />
+          <Row label="How bad" value={answers.owner.severity} />
           {answers.owner.missingAccessories && <Row label="Missing" value={answers.owner.missingAccessories} />}
-          <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" style={{ color: C.muted }}>
             "{answers.owner.statement}"
           </p>
           {urls.length > 0 && (
             <div className="grid grid-cols-4 gap-2">
               {urls.map((url, i) => (
                 <div key={url}>
-                  <div className="aspect-square overflow-hidden rounded-lg" style={{ border: `1px solid ${C.border}` }}>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(i)}
+                    className="block aspect-square w-full cursor-zoom-in overflow-hidden rounded-lg"
+                    style={{ border: `1px solid ${C.border}` }}
+                    aria-label={`Enlarge ${shots[i] ? shotLabel(shots[i]!.shot) : `close-up ${i + 1}`}`}
+                  >
                     <RetryImage src={url} alt={shots[i] ? shotLabel(shots[i]!.shot) : `Close-up ${i + 1}`} className="h-full w-full object-cover" />
-                  </div>
+                  </button>
                   {shots[i] && (
                     <p className="mt-1 text-xs" style={{ color: shots[i]!.capture === 'uploaded' ? C.rust : C.faint }}>
                       {shotLabel(shots[i]!.shot)}
@@ -61,11 +71,12 @@ export function DisputeAnswersSummary({ answers }: { answers: DisputeAnswers }) 
           <Row label="Agrees there is damage" value={answers.renter.agrees === 'yes' ? 'Yes' : 'No'} />
           <Row label="Happened during use" value={YNU_TEXT[answers.renter.duringUse]} />
           <Row label="Could have happened in packing or posting" value={YNU_TEXT[answers.renter.duringPacking]} />
-          <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" style={{ color: C.muted }}>
             "{answers.renter.statement}"
           </p>
         </div>
       )}
+      {open !== null && urls[open] && <Lightbox urls={urls} index={open} alt="Close-up" onClose={() => setOpen(null)} onNavigate={setOpen} />}
     </div>
   )
 }
