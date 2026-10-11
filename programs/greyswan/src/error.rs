@@ -130,4 +130,8 @@ pub enum ErrorCode {
     SameOwnerAndRenter,
     #[msg("This verdict already gives you everything an appeal could")]
     AppealCannotWin,
+    #[msg("The verdict key must not be the admin or a reviewer")]
+    InvalidVerdictKey,
+    #[msg("This value is above its allowed maximum")]
+    ConfigValueTooHigh,
 }

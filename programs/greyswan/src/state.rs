@@ -92,8 +92,16 @@ impl Config {
         require!(self.extra_finding_bps <= MAX_BPS, ErrorCode::BpsOutOfRange);
         require!(self.bond_bps <= MAX_BPS, ErrorCode::BpsOutOfRange);
         require!(
-            (self.auto_release_max_tier as usize) < RUBRIC_TIERS,
+            self.auto_release_max_tier <= MAX_AUTO_RELEASE_TIER,
             ErrorCode::InvalidTier
+        );
+        require!(
+            self.bond_min_lamports <= MAX_BOND_MIN_LAMPORTS,
+            ErrorCode::ConfigValueTooHigh
+        );
+        require!(
+            self.two_reviewer_threshold_lamports <= MAX_TWO_REVIEWER_THRESHOLD_LAMPORTS,
+            ErrorCode::ConfigValueTooHigh
         );
         require!(
             self.appeal_window_secs >= MIN_APPEAL_WINDOW_SECS,
@@ -130,6 +138,12 @@ impl Config {
         require!(
             self.reviewers[count..].iter().all(|r| *r == Pubkey::default()),
             ErrorCode::InvalidReviewer
+        );
+        // The verdict key is a hot key on the AI service. If it were also the
+        // admin or a reviewer, leaking it would hand over those powers too.
+        require!(
+            self.verdict_key != self.admin && !active.contains(&self.verdict_key),
+            ErrorCode::InvalidVerdictKey
         );
         Ok(())
     }

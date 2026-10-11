@@ -272,6 +272,11 @@ fn update_config_enforces_bounds() {
         (ConfigUpdate { extra_finding_bps: Some(10_001), ..Default::default() }, ErrorCode::BpsOutOfRange),
         (ConfigUpdate { bond_bps: Some(10_001), ..Default::default() }, ErrorCode::BpsOutOfRange),
         (ConfigUpdate { auto_release_max_tier: Some(5), ..Default::default() }, ErrorCode::InvalidTier),
+        (ConfigUpdate { auto_release_max_tier: Some(3), ..Default::default() }, ErrorCode::InvalidTier),
+        (ConfigUpdate { bond_min_lamports: Some(1_000_000_001), ..Default::default() }, ErrorCode::ConfigValueTooHigh),
+        (ConfigUpdate { two_reviewer_threshold_lamports: Some(20_000_000_001), ..Default::default() }, ErrorCode::ConfigValueTooHigh),
+        (ConfigUpdate { two_reviewer_threshold_lamports: Some(u64::MAX), ..Default::default() }, ErrorCode::ConfigValueTooHigh),
+        (ConfigUpdate { verdict_key: Some(admin.pubkey()), ..Default::default() }, ErrorCode::InvalidVerdictKey),
         (ConfigUpdate { appeal_window_secs: Some(86_399), ..Default::default() }, ErrorCode::AppealWindowTooShort),
         (ConfigUpdate { appeal_window_secs: Some(DAY_30 + 1), ..Default::default() }, ErrorCode::InvalidDuration),
         (ConfigUpdate { appeal_expiry_secs: Some(0), ..Default::default() }, ErrorCode::InvalidDuration),
@@ -303,7 +308,9 @@ fn update_config_enforces_bounds() {
             rubric_bps: Some([10000; 5]),
             extra_finding_bps: Some(10_000),
             bond_bps: Some(10_000),
-            auto_release_max_tier: Some(4),
+            auto_release_max_tier: Some(2),
+            bond_min_lamports: Some(1_000_000_000),
+            two_reviewer_threshold_lamports: Some(20_000_000_000),
             appeal_window_secs: Some(86_400),
             phase2_deadline_secs: Some(86_400),
             not_returned_grace_secs: Some(86_400),
@@ -330,6 +337,28 @@ fn update_config_enforces_bounds() {
     assert_eq!(c.not_returned_grace_secs, DAY_30);
     assert_eq!(c.inspection_deadline_secs, DAY_30);
     assert_eq!(c.appeal_window_secs, DAY_30);
+}
+
+#[test]
+fn verdict_key_cannot_be_a_reviewer() {
+    let (mut svm, admin) = svm_with_admin();
+    let (reviewer, verdict_key) = (Pubkey::new_unique(), Pubkey::new_unique());
+    update(&mut svm, &admin, ConfigUpdate { reviewers: Some(vec![reviewer]), ..Default::default() }).unwrap();
+    let before = raw_config(&svm);
+    // Setting the verdict key to a reviewer...
+    let result = update(&mut svm, &admin, ConfigUpdate { verdict_key: Some(reviewer), ..Default::default() });
+    assert_program_err(result, ErrorCode::InvalidVerdictKey);
+    // ...or adding the current verdict key as a reviewer.
+    update(&mut svm, &admin, ConfigUpdate { verdict_key: Some(verdict_key), ..Default::default() }).unwrap();
+    let before_add = raw_config(&svm);
+    let result = update(
+        &mut svm,
+        &admin,
+        ConfigUpdate { reviewers: Some(vec![reviewer, verdict_key]), ..Default::default() },
+    );
+    assert_program_err(result, ErrorCode::InvalidVerdictKey);
+    assert_eq!(raw_config(&svm), before_add);
+    assert_ne!(raw_config(&svm), before);
 }
 
 #[test]

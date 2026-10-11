@@ -63,6 +63,14 @@ pub const DEFAULT_INSPECTION_DEADLINE_SECS: i64 = 7 * 86_400;
 // TODO(dispute-2b): placeholder bond values, to be tuned.
 pub const DEFAULT_BOND_BPS: u16 = 1_000;
 pub const DEFAULT_BOND_MIN_LAMPORTS: u64 = 10_000_000;
+/// Ceiling for bond_min_lamports (1 SOL), so appeals can't be priced out.
+pub const MAX_BOND_MIN_LAMPORTS: u64 = 1_000_000_000;
+/// Ceiling for two_reviewer_threshold_lamports (20 SOL, twice the default),
+/// so it can't be raised far enough to switch the two-reviewer rule off.
+pub const MAX_TWO_REVIEWER_THRESHOLD_LAMPORTS: u64 = 20_000_000_000;
+/// Highest auto_release_max_tier: FunctionalDamage. Major and
+/// DestroyedOrMissing findings always go to a human.
+pub const MAX_AUTO_RELEASE_TIER: u8 = 2;
 // TODO(dispute-2b): placeholder thresholds, not yet read by any instruction.
 pub const DEFAULT_LARGE_DEPOSIT_THRESHOLD_LAMPORTS: u64 = 5_000_000_000;
 pub const DEFAULT_TWO_REVIEWER_THRESHOLD_LAMPORTS: u64 = 10_000_000_000;
