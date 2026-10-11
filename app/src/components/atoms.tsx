@@ -107,3 +107,17 @@ export function SectionHeading({ children }: { children: ReactNode }) {
     </h3>
   )
 }
+
+// Small unread-count pill for a rental card (MyRentals/MyListings) — same
+// rust tint used everywhere else for "needs attention."
+export function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span
+      className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold"
+      style={{ background: C.rust, color: C.onAccent }}
+    >
+      {count > 9 ? '9+' : count}
+    </span>
+  )
+}
