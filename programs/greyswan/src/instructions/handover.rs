@@ -134,6 +134,55 @@ pub fn handle_submit_phase2(ctx: Context<SubmitPhase2>, photos: String) -> Resul
     Ok(())
 }
 
+// ---------- Phase 2 fallback: Owner, after the arrival deadline ----------
+
+// If the renter neither confirms arrival nor rejects the item by the
+// deadline, receipt counts as confirmed and the owner can move the rental
+// on. Without this the rental would be stuck: the renter can no longer act,
+// and the owner's later steps all need phase 2 done.
+
+#[derive(Accounts)]
+pub struct ConfirmArrivalAfterDeadline<'info> {
+    #[account(mut)]
+    pub rental: Account<'info, Rental>,
+
+    // Typed, so a rental with no timeline (shipped before timelines existed,
+    // so it has no deadline) fails here.
+    #[account(seeds = [TIMELINE_SEED, rental.key().as_ref()], bump = timeline.bump)]
+    pub timeline: Account<'info, RentalTimeline>,
+
+    pub owner: Signer<'info>,
+}
+
+pub fn handle_confirm_arrival_after_deadline(ctx: Context<ConfirmArrivalAfterDeadline>) -> Result<()> {
+    require_keys_eq!(
+        ctx.accounts.rental.owner,
+        ctx.accounts.owner.key(),
+        crate::error::ErrorCode::NotOwnerForPhase,
+    );
+    // A rejection moves the rental to Disputed, so it fails here.
+    require!(
+        ctx.accounts.rental.status == RentalStatus::Active,
+        crate::error::ErrorCode::InvalidRentalStatus,
+    );
+    // A renter confirmation moves it past BeforeSending, so it fails here.
+    require!(
+        ctx.accounts.rental.current_phase == HandoverPhase::BeforeSending,
+        crate::error::ErrorCode::PhaseOutOfOrder,
+    );
+    // Strictly after: the renter can still act at the deadline itself.
+    require!(
+        Clock::get()?.unix_timestamp > ctx.accounts.timeline.arrival_deadline,
+        crate::error::ErrorCode::ArrivalWindowStillOpen,
+    );
+
+    // Same phase state as submit_phase2. phase2_photos stays empty, which is
+    // how this path can be told apart from a renter confirmation.
+    ctx.accounts.rental.current_phase = HandoverPhase::OnArrival;
+
+    Ok(())
+}
+
 // ---------- Phase 3: Renter, before returning ----------
 
 #[derive(Accounts)]

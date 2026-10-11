@@ -86,4 +86,6 @@ pub enum ErrorCode {
     ArrivalWindowClosed,
     #[msg("Rental timeline account is not in the expected format")]
     InvalidTimelineAccount,
+    #[msg("The renter still has time to confirm arrival")]
+    ArrivalWindowStillOpen,
 }

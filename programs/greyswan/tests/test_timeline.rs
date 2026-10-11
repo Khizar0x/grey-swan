@@ -208,3 +208,99 @@ fn legacy_rental_without_timeline_can_still_be_rejected() {
     send_as(&mut svm, reject_on_arrival_ix(rental, renter), renter).unwrap();
     assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Disputed);
 }
+
+// ---------- confirm_arrival_after_deadline ----------
+
+fn confirm_after_deadline_ix(rental: Pubkey, owner: Pubkey) -> anchor_lang::solana_program::instruction::Instruction {
+    ix(
+        greyswan::instruction::ConfirmArrivalAfterDeadline {},
+        greyswan::accounts::ConfirmArrivalAfterDeadline { rental, timeline: timeline_pda(&rental), owner },
+    )
+}
+
+fn confirm_after_deadline(svm: &mut LiteSVM, rental: Pubkey, signer: &Keypair) -> Result<(), String> {
+    send(svm, confirm_after_deadline_ix(rental, signer.pubkey()), signer, &[signer])
+}
+
+#[test]
+fn owner_confirms_arrival_after_deadline_and_rental_completes() {
+    let (mut svm, _, owner, renter, rental) = shipped();
+    warp(&mut svm, DEFAULT_WINDOW + 1);
+
+    confirm_after_deadline(&mut svm, rental, &owner).unwrap();
+    let state = read::<Rental>(&svm, &rental);
+    assert_eq!(state.current_phase, HandoverPhase::OnArrival);
+    assert_eq!(state.status, RentalStatus::Active);
+    assert_eq!(state.phase2_photos, "");
+
+    // The rest of the rental runs normally.
+    phase3(&mut svm, rental, &renter).unwrap();
+    phase4(&mut svm, rental, &owner).unwrap();
+    send(
+        &mut svm,
+        ix(
+            greyswan::instruction::ConfirmReturn {},
+            greyswan::accounts::ConfirmReturn {
+                listing: state.listing,
+                rental,
+                owner: owner.pubkey(),
+                renter: renter.pubkey(),
+                platform_wallet: greyswan::PLATFORM_WALLET,
+                system_program: anchor_lang::solana_program::system_program::ID,
+            },
+        ),
+        &owner,
+        &[&owner],
+    )
+    .unwrap();
+    assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Completed);
+}
+
+#[test]
+fn confirm_after_deadline_rejected_before_it_passes() {
+    let (mut svm, _, owner, _, rental) = shipped();
+    assert_program_err(confirm_after_deadline(&mut svm, rental, &owner), ErrorCode::ArrivalWindowStillOpen);
+    // At the deadline itself the renter still has time.
+    warp(&mut svm, DEFAULT_WINDOW);
+    assert_program_err(confirm_after_deadline(&mut svm, rental, &owner), ErrorCode::ArrivalWindowStillOpen);
+    assert_eq!(phase(&svm, &rental), HandoverPhase::BeforeSending);
+}
+
+#[test]
+fn confirm_after_deadline_rejected_for_non_owner() {
+    let (mut svm, _, _, renter, rental) = shipped();
+    let stranger = funded(&mut svm);
+    warp(&mut svm, DEFAULT_WINDOW + 1);
+    assert_program_err(confirm_after_deadline(&mut svm, rental, &renter), ErrorCode::NotOwnerForPhase);
+    assert_program_err(confirm_after_deadline(&mut svm, rental, &stranger), ErrorCode::NotOwnerForPhase);
+    assert_eq!(phase(&svm, &rental), HandoverPhase::BeforeSending);
+}
+
+#[test]
+fn confirm_after_deadline_rejected_if_renter_already_confirmed() {
+    let (mut svm, _, owner, renter, rental) = shipped();
+    phase2(&mut svm, rental, &renter).unwrap();
+    warp(&mut svm, DEFAULT_WINDOW + 1);
+    assert_program_err(confirm_after_deadline(&mut svm, rental, &owner), ErrorCode::PhaseOutOfOrder);
+    assert_eq!(read::<Rental>(&svm, &rental).phase2_photos, "ipfs://QmPhase2");
+}
+
+#[test]
+fn confirm_after_deadline_rejected_if_renter_rejected() {
+    let (mut svm, _, owner, renter, rental) = shipped();
+    reject_on_arrival(&mut svm, rental, &renter).unwrap();
+    warp(&mut svm, DEFAULT_WINDOW + 1);
+    assert_program_err(confirm_after_deadline(&mut svm, rental, &owner), ErrorCode::InvalidRentalStatus);
+    assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Disputed);
+}
+
+#[test]
+fn confirm_after_deadline_not_available_for_legacy_rental() {
+    // No timeline means no deadline, so there is nothing to have missed.
+    let (mut svm, rental, _) = legacy_shipped_rental();
+    let owner = read::<Rental>(&svm, &rental).owner;
+    let err = send_as(&mut svm, confirm_after_deadline_ix(rental, owner), owner).unwrap_err();
+    // anchor_lang AccountNotInitialized
+    assert!(err.contains("Custom(3012)"), "got {err}");
+    assert_eq!(phase(&svm, &rental), HandoverPhase::BeforeSending);
+}

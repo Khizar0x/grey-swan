@@ -95,6 +95,10 @@ pub mod greyswan {
         crate::instructions::handover::handle_submit_phase2(ctx, photos)
     }
 
+    pub fn confirm_arrival_after_deadline(ctx: Context<ConfirmArrivalAfterDeadline>) -> Result<()> {
+        crate::instructions::handover::handle_confirm_arrival_after_deadline(ctx)
+    }
+
     pub fn submit_phase3(
         ctx: Context<SubmitPhase3>,
         photos: String,
