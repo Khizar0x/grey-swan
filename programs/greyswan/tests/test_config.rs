@@ -28,6 +28,8 @@ use {
     std::str::FromStr,
 };
 
+const DAY_30: i64 = 30 * 86_400;
+
 const DEVNET_ADMIN: &str = "76D6XPGqbxcrCddeLtfPLwG1ZfNMkveCpAtDSH3pzTb4";
 
 fn devnet_admin() -> Pubkey {
@@ -78,7 +80,9 @@ fn assert_defaults(config: &Config) {
     assert_eq!(config.phase2_deadline_secs, 432_000);
     assert_eq!(config.bond_bps, 1000);
     assert_eq!(config.bond_min_lamports, 10_000_000);
-    assert_eq!(config.reserved, [0u8; 128]);
+    assert_eq!(config.not_returned_grace_secs, 3 * 86_400);
+    assert_eq!(config.inspection_deadline_secs, 7 * 86_400);
+    assert_eq!(config.reserved, [0u8; 112]);
 }
 
 // ---------- Migration, on the real devnet bytes ----------
@@ -261,7 +265,14 @@ fn update_config_enforces_bounds() {
         (ConfigUpdate { auto_release_max_tier: Some(5), ..Default::default() }, ErrorCode::InvalidTier),
         (ConfigUpdate { appeal_window_secs: Some(86_399), ..Default::default() }, ErrorCode::AppealWindowTooShort),
         (ConfigUpdate { appeal_expiry_secs: Some(0), ..Default::default() }, ErrorCode::InvalidDuration),
+        (ConfigUpdate { appeal_expiry_secs: Some(DAY_30 + 1), ..Default::default() }, ErrorCode::InvalidDuration),
         (ConfigUpdate { phase2_deadline_secs: Some(3_600), ..Default::default() }, ErrorCode::InvalidDuration),
+        (ConfigUpdate { phase2_deadline_secs: Some(DAY_30 + 1), ..Default::default() }, ErrorCode::InvalidDuration),
+        (ConfigUpdate { phase2_deadline_secs: Some(i64::MAX), ..Default::default() }, ErrorCode::InvalidDuration),
+        (ConfigUpdate { not_returned_grace_secs: Some(86_399), ..Default::default() }, ErrorCode::InvalidDuration),
+        (ConfigUpdate { not_returned_grace_secs: Some(DAY_30 + 1), ..Default::default() }, ErrorCode::InvalidDuration),
+        (ConfigUpdate { inspection_deadline_secs: Some(86_399), ..Default::default() }, ErrorCode::InvalidDuration),
+        (ConfigUpdate { inspection_deadline_secs: Some(DAY_30 + 1), ..Default::default() }, ErrorCode::InvalidDuration),
         (ConfigUpdate { reviewers: Some((0..11).map(|_| Pubkey::new_unique()).collect()), ..Default::default() }, ErrorCode::TooManyReviewers),
         (ConfigUpdate { reviewers: Some(vec![Pubkey::default()]), ..Default::default() }, ErrorCode::InvalidReviewer),
         {
@@ -285,11 +296,28 @@ fn update_config_enforces_bounds() {
             auto_release_max_tier: Some(4),
             appeal_window_secs: Some(86_400),
             phase2_deadline_secs: Some(86_400),
+            not_returned_grace_secs: Some(86_400),
+            inspection_deadline_secs: Some(86_400),
             reviewers: Some((0..10).map(|_| Pubkey::new_unique()).collect()),
             ..Default::default()
         },
     )
     .unwrap();
+    update(
+        &mut svm,
+        &admin,
+        ConfigUpdate {
+            appeal_expiry_secs: Some(DAY_30),
+            phase2_deadline_secs: Some(DAY_30),
+            not_returned_grace_secs: Some(DAY_30),
+            inspection_deadline_secs: Some(DAY_30),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let c = read::<Config>(&svm, &config_pda());
+    assert_eq!(c.not_returned_grace_secs, DAY_30);
+    assert_eq!(c.inspection_deadline_secs, DAY_30);
 }
 
 #[test]

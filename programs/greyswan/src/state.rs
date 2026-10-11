@@ -42,7 +42,13 @@ pub struct Config {
     pub large_deposit_threshold_lamports: u64,
     // TODO(dispute-2b): placeholder, not yet read by any instruction.
     pub two_reviewer_threshold_lamports: u64,
-    pub reserved: [u8; 128],
+    // How long after return_due_at the owner waits before flag_not_returned.
+    // Read live, at flag time.
+    pub not_returned_grace_secs: i64,
+    // Copied into the rental's timeline when the renter sends the item back,
+    // so a later change doesn't move an inspection already under way.
+    pub inspection_deadline_secs: i64,
+    pub reserved: [u8; 112],
 }
 
 impl Config {
@@ -65,7 +71,9 @@ impl Config {
             bond_min_lamports: DEFAULT_BOND_MIN_LAMPORTS,
             large_deposit_threshold_lamports: DEFAULT_LARGE_DEPOSIT_THRESHOLD_LAMPORTS,
             two_reviewer_threshold_lamports: DEFAULT_TWO_REVIEWER_THRESHOLD_LAMPORTS,
-            reserved: [0; 128],
+            not_returned_grace_secs: DEFAULT_NOT_RETURNED_GRACE_SECS,
+            inspection_deadline_secs: DEFAULT_INSPECTION_DEADLINE_SECS,
+            reserved: [0; 112],
         }
     }
 
@@ -91,9 +99,20 @@ impl Config {
             self.appeal_window_secs >= MIN_APPEAL_WINDOW_SECS,
             ErrorCode::AppealWindowTooShort
         );
-        require!(self.appeal_expiry_secs > 0, ErrorCode::InvalidDuration);
         require!(
-            self.phase2_deadline_secs >= MIN_PHASE2_DEADLINE_SECS,
+            self.appeal_expiry_secs > 0 && self.appeal_expiry_secs <= MAX_TIMEOUT_SECS,
+            ErrorCode::InvalidDuration
+        );
+        require!(
+            (MIN_PHASE2_DEADLINE_SECS..=MAX_TIMEOUT_SECS).contains(&self.phase2_deadline_secs),
+            ErrorCode::InvalidDuration
+        );
+        require!(
+            (MIN_TIMEOUT_SECS..=MAX_TIMEOUT_SECS).contains(&self.not_returned_grace_secs),
+            ErrorCode::InvalidDuration
+        );
+        require!(
+            (MIN_TIMEOUT_SECS..=MAX_TIMEOUT_SECS).contains(&self.inspection_deadline_secs),
             ErrorCode::InvalidDuration
         );
 

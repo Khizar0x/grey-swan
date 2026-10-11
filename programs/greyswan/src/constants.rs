@@ -44,12 +44,22 @@ pub const MIN_APPEAL_WINDOW_SECS: i64 = 86_400;
 /// shortened to the point where an honest renter cannot meet it.
 pub const MIN_PHASE2_DEADLINE_SECS: i64 = 86_400;
 
+/// Ceiling for every rental-timing setting (arrival window, not-returned
+/// grace, inspection window, appeal expiry), so a mistyped value can't
+/// leave a rental waiting on a deadline that effectively never comes.
+pub const MAX_TIMEOUT_SECS: i64 = 30 * 86_400;
+
+/// Floor for not_returned_grace_secs and inspection_deadline_secs.
+pub const MIN_TIMEOUT_SECS: i64 = 86_400;
+
 pub const DEFAULT_RUBRIC_BPS: [u16; RUBRIC_TIERS] = [0, 1_500, 5_000, 8_000, 10_000];
 pub const DEFAULT_EXTRA_FINDING_BPS: u16 = 500;
 pub const DEFAULT_AUTO_RELEASE_MAX_TIER: u8 = 2;
 pub const DEFAULT_APPEAL_WINDOW_SECS: i64 = 86_400;
 pub const DEFAULT_APPEAL_EXPIRY_SECS: i64 = 604_800;
 pub const DEFAULT_PHASE2_DEADLINE_SECS: i64 = 432_000;
+pub const DEFAULT_NOT_RETURNED_GRACE_SECS: i64 = 3 * 86_400;
+pub const DEFAULT_INSPECTION_DEADLINE_SECS: i64 = 7 * 86_400;
 // TODO(dispute-2b): placeholder bond values, to be tuned.
 pub const DEFAULT_BOND_BPS: u16 = 1_000;
 pub const DEFAULT_BOND_MIN_LAMPORTS: u64 = 10_000_000;
@@ -60,3 +70,5 @@ pub const DEFAULT_TWO_REVIEWER_THRESHOLD_LAMPORTS: u64 = 10_000_000_000;
 pub const TIMELINE_SEED: &[u8] = b"timeline";
 
 pub const DISPUTE_SEED: &[u8] = b"dispute";
+
+pub const SECONDS_PER_WEEK: i64 = 7 * 86_400;

@@ -20,6 +20,8 @@ pub struct ConfigUpdate {
     pub bond_min_lamports: Option<u64>,
     pub large_deposit_threshold_lamports: Option<u64>,
     pub two_reviewer_threshold_lamports: Option<u64>,
+    pub not_returned_grace_secs: Option<i64>,
+    pub inspection_deadline_secs: Option<i64>,
 }
 
 #[derive(Accounts)]
@@ -79,6 +81,12 @@ pub fn handle_update_config(ctx: Context<UpdateConfig>, update: ConfigUpdate) ->
     }
     if let Some(v) = update.two_reviewer_threshold_lamports {
         config.two_reviewer_threshold_lamports = v;
+    }
+    if let Some(v) = update.not_returned_grace_secs {
+        config.not_returned_grace_secs = v;
+    }
+    if let Some(v) = update.inspection_deadline_secs {
+        config.inspection_deadline_secs = v;
     }
 
     // Validated as a whole, so a change is checked against the other values
