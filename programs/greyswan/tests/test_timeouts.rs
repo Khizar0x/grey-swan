@@ -707,3 +707,114 @@ fn legacy_rental_without_timeline_can_still_be_flagged_on_return() {
     send_as(&mut svm, flag_return_issue_ix(rental, owner), owner).unwrap();
     assert_eq!(state(&svm, &rental).dispute_kind, DisputeKind::ReturnIssue);
 }
+
+// ---------- flag_return_not_received ----------
+
+fn not_received_ix(rental: Pubkey, owner: Pubkey) -> Instruction {
+    ix(
+        greyswan::instruction::FlagReturnNotReceived {},
+        greyswan::accounts::FlagReturnNotReceived {
+            rental,
+            timeline: timeline_pda(&rental),
+            dispute: dispute_pda(&rental),
+            owner,
+            system_program: system_program::ID,
+        },
+    )
+}
+
+fn not_received(svm: &mut LiteSVM, rental: Pubkey, signer: &Keypair) -> Result<(), String> {
+    send(svm, not_received_ix(rental, signer.pubkey()), signer, &[signer])
+}
+
+#[test]
+fn not_received_opens_dispute_and_blocks_timed_out_completion() {
+    let Rented { mut svm, admin, owner, renter, listing, rental } = sent_back();
+    // At the deadline itself the owner can still report it.
+    set_time(&mut svm, START_TIME + INSPECTION);
+    let owner_before = lamports(&svm, &owner.pubkey());
+    not_received(&mut svm, rental, &owner).unwrap();
+
+    let s = state(&svm, &rental);
+    assert_eq!(s.status, RentalStatus::Disputed);
+    assert_eq!(s.dispute_kind, DisputeKind::ReturnNotReceived);
+    assert_eq!(s.disputed_at, START_TIME + INSPECTION);
+    let dispute = read::<Dispute>(&svm, &dispute_pda(&rental));
+    assert_eq!(dispute.kind, DisputeKind::ReturnNotReceived);
+    assert_eq!(dispute.status, DisputeStatus::Open);
+    let dispute_rent = Rent::default().minimum_balance(8 + Dispute::INIT_SPACE);
+    assert_eq!(lamports(&svm, &owner.pubkey()), owner_before - dispute_rent - 5000);
+
+    // The renter can no longer complete it by timeout; a reviewer decides.
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    assert_program_err(complete(&mut svm, listing, rental, &owner, &renter), ErrorCode::InvalidRentalStatus);
+    send(
+        &mut svm,
+        resolve_dispute_ix(listing, rental, admin.pubkey(), owner.pubkey(), renter.pubkey(), TOTAL_HELD, 0),
+        &admin,
+        &[&admin],
+    )
+    .unwrap();
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Resolved);
+}
+
+#[test]
+fn not_received_rejected_after_the_inspection_deadline() {
+    let Rented { mut svm, owner, rental, .. } = sent_back();
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    assert_program_err(not_received(&mut svm, rental, &owner), ErrorCode::InspectionWindowClosed);
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Active);
+    assert!(svm.get_account(&dispute_pda(&rental)).is_none());
+}
+
+#[test]
+fn not_received_rejected_for_anyone_but_the_owner() {
+    let Rented { mut svm, renter, rental, .. } = sent_back();
+    let stranger = funded(&mut svm);
+    assert_program_err(not_received(&mut svm, rental, &renter), ErrorCode::NotOwnerForPhase);
+    assert_program_err(not_received(&mut svm, rental, &stranger), ErrorCode::NotOwnerForPhase);
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Active);
+}
+
+#[test]
+fn not_received_rejected_once_owner_logged_the_return() {
+    let Rented { mut svm, owner, rental, .. } = sent_back();
+    phase4(&mut svm, rental, &owner).unwrap();
+    assert_program_err(not_received(&mut svm, rental, &owner), ErrorCode::PhaseOutOfOrder);
+}
+
+#[test]
+fn not_received_rejected_before_the_renter_sends_it_back() {
+    let Rented { mut svm, owner, rental, .. } = arrived();
+    assert_program_err(not_received(&mut svm, rental, &owner), ErrorCode::PhaseOutOfOrder);
+}
+
+#[test]
+fn not_received_rejected_once_the_rental_is_over() {
+    let Rented { mut svm, owner, renter, listing, rental, .. } = sent_back();
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    complete(&mut svm, listing, rental, &owner, &renter).unwrap();
+    assert_program_err(not_received(&mut svm, rental, &owner), ErrorCode::InvalidRentalStatus);
+}
+
+#[test]
+fn not_received_unavailable_for_legacy_rental_without_timeline() {
+    // Unchanged for legacy rentals: no timeline, so this fails and the owner
+    // keeps phase 4 then flag_return_issue (or admin_open_dispute).
+    let (mut svm, rental, renter) = legacy_shipped_rental();
+    let owner = state(&svm, &rental).owner;
+    send_as(
+        &mut svm,
+        ix(
+            greyswan::instruction::SubmitPhase2 { photos: "ipfs://QmPhase2".to_string() },
+            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), config: config_pda(), renter },
+        ),
+        renter,
+    )
+    .unwrap();
+    phase3_as(&mut svm, rental, renter);
+    let err = send_as(&mut svm, not_received_ix(rental, owner), owner).unwrap_err();
+    // anchor_lang AccountNotInitialized
+    assert!(err.contains("Custom(3012)"), "{err}");
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Active);
+}

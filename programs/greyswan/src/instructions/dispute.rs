@@ -215,6 +215,67 @@ pub fn handle_flag_not_returned(ctx: Context<FlagNotReturned>) -> Result<()> {
     Ok(())
 }
 
+// ---------- Owner reports the returned item never arrived ----------
+
+// The renter says they've sent it back (phase 3) but it hasn't reached the
+// owner (no phase 4). The owner has until the inspection deadline to say
+// so; after that the renter can complete the rental instead.
+
+#[derive(Accounts)]
+pub struct FlagReturnNotReceived<'info> {
+    #[account(mut)]
+    pub rental: Account<'info, Rental>,
+
+    // Typed, so a rental with no timeline (no inspection deadline) fails
+    // here. On those the owner still has phase 4 then flag_return_issue.
+    #[account(seeds = [TIMELINE_SEED, rental.key().as_ref()], bump = timeline.bump)]
+    pub timeline: Account<'info, RentalTimeline>,
+
+    #[account(
+        init,
+        payer = owner,
+        space = 8 + Dispute::INIT_SPACE,
+        seeds = [DISPUTE_SEED, rental.key().as_ref()],
+        bump
+    )]
+    pub dispute: Account<'info, Dispute>,
+
+    #[account(mut)]
+    pub owner: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handle_flag_return_not_received(ctx: Context<FlagReturnNotReceived>) -> Result<()> {
+    require_keys_eq!(
+        ctx.accounts.rental.owner,
+        ctx.accounts.owner.key(),
+        crate::error::ErrorCode::NotOwnerForPhase,
+    );
+    require!(
+        ctx.accounts.rental.status == RentalStatus::Active,
+        crate::error::ErrorCode::InvalidRentalStatus,
+    );
+    // Sent back (phase 3 done) and not logged as received (no phase 4).
+    require!(
+        ctx.accounts.rental.current_phase == HandoverPhase::BeforeReturning,
+        crate::error::ErrorCode::PhaseOutOfOrder,
+    );
+    let inspection_deadline = ctx.accounts.timeline.inspection_deadline;
+    require!(inspection_deadline != 0, crate::error::ErrorCode::RentalTimesNotRecorded);
+    let now = Clock::get()?.unix_timestamp;
+    require!(now <= inspection_deadline, crate::error::ErrorCode::InspectionWindowClosed);
+
+    let rental = &mut ctx.accounts.rental;
+    rental.status = RentalStatus::Disputed;
+    rental.dispute_kind = DisputeKind::ReturnNotReceived;
+    rental.disputed_at = now;
+
+    open_dispute(&mut ctx.accounts.dispute, rental.key(), DisputeKind::ReturnNotReceived, now, ctx.bumps.dispute);
+
+    Ok(())
+}
+
 // ---------- Admin opens a dispute on a stuck rental ----------
 
 // The exit for anything the timeouts don't cover, including rentals shipped

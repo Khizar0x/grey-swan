@@ -141,6 +141,10 @@ pub mod greyswan {
         crate::instructions::dispute::handle_flag_not_returned(ctx)
     }
 
+    pub fn flag_return_not_received(ctx: Context<FlagReturnNotReceived>) -> Result<()> {
+        crate::instructions::dispute::handle_flag_return_not_received(ctx)
+    }
+
     pub fn admin_open_dispute(ctx: Context<AdminOpenDispute>, reason: String) -> Result<()> {
         crate::instructions::dispute::handle_admin_open_dispute(ctx, reason)
     }
