@@ -118,6 +118,7 @@ fn test_flag_return_issue() {
             .data(),
             greyswan::accounts::FlagReturnIssue {
                 rental: rental.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
                 dispute: common::dispute_pda(&rental.pubkey()),
                 system_program: system_program::ID,
                 owner: owner.pubkey(),
@@ -227,6 +228,7 @@ fn test_flag_return_issue() {
             .data(),
             greyswan::accounts::FlagReturnIssue {
                 rental: rental.pubkey(),
+                timeline: common::timeline_pda(&rental.pubkey()),
                 dispute: common::dispute_pda(&rental.pubkey()),
                 system_program: system_program::ID,
                 owner: owner.pubkey(),

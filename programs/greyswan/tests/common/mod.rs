@@ -253,6 +253,7 @@ pub fn flag_return_issue_ix(rental: Pubkey, owner: Pubkey) -> Instruction {
         greyswan::instruction::FlagReturnIssue { reason: "Lens is scratched".to_string() },
         greyswan::accounts::FlagReturnIssue {
             rental,
+            timeline: timeline_pda(&rental),
             dispute: dispute_pda(&rental),
             owner,
             system_program: system_program::ID,

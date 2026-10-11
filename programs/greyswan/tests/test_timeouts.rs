@@ -655,3 +655,55 @@ fn admin_opens_and_resolves_real_legacy_devnet_rental() {
     assert_eq!(lamports(&svm, &rental), rental_before - held);
     assert!(read::<Listing>(&svm, &s.listing).is_available);
 }
+
+// ---------- flag_return_issue closes at the inspection deadline ----------
+
+#[test]
+fn return_issue_can_be_flagged_up_to_and_at_the_inspection_deadline() {
+    let Rented { mut svm, owner, rental, .. } = sent_back();
+    phase4(&mut svm, rental, &owner).unwrap();
+    set_time(&mut svm, START_TIME + INSPECTION);
+    flag_return_issue(&mut svm, rental, &owner).unwrap();
+    assert_eq!(state(&svm, &rental).dispute_kind, DisputeKind::ReturnIssue);
+}
+
+#[test]
+fn return_issue_rejected_after_the_inspection_deadline() {
+    let Rented { mut svm, owner, renter, listing, rental, .. } = sent_back();
+    phase4(&mut svm, rental, &owner).unwrap();
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    assert_program_err(flag_return_issue(&mut svm, rental, &owner), ErrorCode::InspectionWindowClosed);
+    assert!(svm.get_account(&dispute_pda(&rental)).is_none());
+    // Only the renter's completion applies now.
+    complete(&mut svm, listing, rental, &owner, &renter).unwrap();
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Completed);
+}
+
+#[test]
+fn legacy_rental_without_timeline_can_still_be_flagged_on_return() {
+    // No timeline means no inspection deadline, so nothing changes for it.
+    let (mut svm, rental, renter) = legacy_shipped_rental();
+    let owner = state(&svm, &rental).owner;
+    send_as(
+        &mut svm,
+        ix(
+            greyswan::instruction::SubmitPhase2 { photos: "ipfs://QmPhase2".to_string() },
+            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), config: config_pda(), renter },
+        ),
+        renter,
+    )
+    .unwrap();
+    phase3_as(&mut svm, rental, renter);
+    send_as(
+        &mut svm,
+        ix(
+            greyswan::instruction::SubmitPhase4 { photos: "ipfs://QmPhase4".to_string() },
+            greyswan::accounts::SubmitPhase4 { rental, owner },
+        ),
+        owner,
+    )
+    .unwrap();
+    warp(&mut svm, 365 * DAY);
+    send_as(&mut svm, flag_return_issue_ix(rental, owner), owner).unwrap();
+    assert_eq!(state(&svm, &rental).dispute_kind, DisputeKind::ReturnIssue);
+}

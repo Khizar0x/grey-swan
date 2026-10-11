@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
-use crate::instructions::handover::check_arrival_deadline;
+use crate::instructions::handover::{check_arrival_deadline, load_timeline};
 use crate::state::{
     Config, Dispute, DisputeKind, DisputeStatus, HandoverPhase, Listing, Rental, RentalStatus,
     RentalTimeline,
@@ -20,6 +20,10 @@ fn open_dispute(dispute: &mut Dispute, rental: Pubkey, kind: DisputeKind, now: i
 pub struct FlagReturnIssue<'info> {
     #[account(mut)]
     pub rental: Account<'info, Rental>,
+
+    /// CHECK: may not exist (legacy rentals); see load_timeline.
+    #[account(seeds = [TIMELINE_SEED, rental.key().as_ref()], bump)]
+    pub timeline: UncheckedAccount<'info>,
 
     #[account(
         init,
@@ -56,7 +60,19 @@ pub fn handle_flag_return_issue(ctx: Context<FlagReturnIssue>, reason: String) -
         crate::error::ErrorCode::DisputeReasonTooLong
     );
 
+    // Once the inspection deadline has passed, the renter's
+    // complete_after_inspection_deadline is the only way on. Legacy rentals
+    // (no timeline, so no deadline) can still be flagged at any time.
     let now = Clock::get()?.unix_timestamp;
+    if let Some(timeline) = load_timeline(&ctx.accounts.timeline)? {
+        if timeline.inspection_deadline != 0 {
+            require!(
+                now <= timeline.inspection_deadline,
+                crate::error::ErrorCode::InspectionWindowClosed
+            );
+        }
+    }
+
     let rental = &mut ctx.accounts.rental;
     rental.status = RentalStatus::Disputed;
     rental.dispute_kind = DisputeKind::ReturnIssue;

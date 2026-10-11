@@ -94,4 +94,6 @@ pub enum ErrorCode {
     RentalTimesNotRecorded,
     #[msg("The owner still has time to check the returned item")]
     InspectionWindowStillOpen,
+    #[msg("The window to check the returned item has closed")]
+    InspectionWindowClosed,
 }
