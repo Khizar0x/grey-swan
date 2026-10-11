@@ -47,6 +47,54 @@ export type Greyswan = {
       "args": []
     },
     {
+      "name": "confirmArrivalAfterDeadline",
+      "discriminator": [
+        164,
+        202,
+        114,
+        249,
+        39,
+        202,
+        73,
+        91
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "confirmReturn",
       "discriminator": [
         4,
@@ -463,24 +511,6 @@ export type Greyswan = {
           }
         },
         {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
           "name": "dispute",
           "writable": true,
           "pda": {
@@ -699,6 +729,24 @@ export type Greyswan = {
           }
         },
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "owner",
           "writable": true,
           "signer": true
@@ -756,24 +804,6 @@ export type Greyswan = {
               {
                 "kind": "account",
                 "path": "rental"
-              }
-            ]
-          }
-        },
-        {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
               }
             ]
           }
@@ -1240,6 +1270,11 @@ export type Greyswan = {
       "code": 6041,
       "name": "invalidTimelineAccount",
       "msg": "Rental timeline account is not in the expected format"
+    },
+    {
+      "code": 6042,
+      "name": "arrivalWindowStillOpen",
+      "msg": "The renter still has time to confirm arrival"
     }
   ],
   "types": [
@@ -1810,11 +1845,15 @@ export type Greyswan = {
             "type": "u8"
           },
           {
+            "name": "arrivalDeadline",
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                64
+                56
               ]
             }
           }

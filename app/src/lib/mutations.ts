@@ -94,13 +94,14 @@ export async function rentItem(program: Program<Greyswan>, listing: PublicKey, r
 }
 
 // Also sends `timeline` (PDA ["timeline", rental], created here and paid by
-// the owner) and `system_program`. Both are derived by Anchor from the IDL.
+// the owner), `config` (read once to fix the arrival deadline) and
+// `system_program`, all derived by Anchor from the IDL.
 export async function submitPhase1(program: Program<Greyswan>, rental: PublicKey, owner: PublicKey, photos: string, trackingNumber: string) {
   return program.methods.submitPhase1(photos, trackingNumber).accounts({ rental, owner }).rpc()
 }
 
-// Also sends `timeline` and `config`, derived by Anchor from the IDL. The
-// program reads the arrival deadline from them.
+// Also sends `timeline`, derived by Anchor from the IDL. The program reads
+// the arrival deadline from it.
 export async function submitPhase2(program: Program<Greyswan>, rental: PublicKey, renter: PublicKey, photos: string) {
   return program.methods.submitPhase2(photos).accounts({ rental, renter }).rpc()
 }
@@ -137,9 +138,9 @@ export async function flagReturnIssue(program: Program<Greyswan>, rental: Public
   return program.methods.flagReturnIssue(reason).accounts({ rental, owner }).rpc()
 }
 
-// Also sends `timeline` and `config` (arrival deadline) and `dispute` (PDA
-// ["dispute", rental], created here and paid by the renter), all derived by
-// Anchor from the IDL.
+// Also sends `timeline` (arrival deadline) and `dispute` (PDA ["dispute",
+// rental], created here and paid by the renter), both derived by Anchor from
+// the IDL.
 export async function rejectOnArrival(program: Program<Greyswan>, rental: PublicKey, renter: PublicKey, photos: string, reason: string) {
   return program.methods.rejectOnArrival(photos, reason).accounts({ rental, renter }).rpc()
 }
