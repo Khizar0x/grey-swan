@@ -93,6 +93,76 @@ export type Greyswan = {
       ]
     },
     {
+      "name": "appeal",
+      "discriminator": [
+        250,
+        91,
+        1,
+        244,
+        179,
+        52,
+        75,
+        236
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rental"
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "appellant",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claimRefund",
       "discriminator": [
         15,
@@ -296,6 +366,172 @@ export type Greyswan = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "expireAppeal",
+      "discriminator": [
+        103,
+        85,
+        227,
+        157,
+        166,
+        89,
+        78,
+        46
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "platformWallet",
+          "writable": true,
+          "address": "32tt6bRdV1bM9D9ZkgfPFz3kt44YgpfJ6yYhfz8kiYbD"
+        },
+        {
+          "name": "caller",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "finalizeVerdict",
+      "discriminator": [
+        97,
+        17,
+        118,
+        183,
+        198,
+        231,
+        123,
+        77
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "platformWallet",
+          "writable": true,
+          "address": "32tt6bRdV1bM9D9ZkgfPFz3kt44YgpfJ6yYhfz8kiYbD"
+        },
+        {
+          "name": "caller",
+          "signer": true
         }
       ],
       "args": []
@@ -626,6 +862,69 @@ export type Greyswan = {
       ]
     },
     {
+      "name": "initPool",
+      "discriminator": [
+        116,
+        233,
+        199,
+        204,
+        115,
+        159,
+        171,
+        36
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize",
       "discriminator": [
         175,
@@ -810,6 +1109,94 @@ export type Greyswan = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "postVerdict",
+      "discriminator": [
+        198,
+        254,
+        149,
+        6,
+        94,
+        65,
+        180,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rental"
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "verdictSigner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "tiers",
+          "type": "bytes"
+        },
+        {
+          "name": "promptHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "outputHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "rejectOnArrival",
@@ -1001,8 +1388,37 @@ export type Greyswan = {
           "writable": true
         },
         {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "admin",
           "signer": true
+        },
+        {
+          "name": "secondReviewer",
+          "signer": true,
+          "optional": true
         },
         {
           "name": "owner",
@@ -1025,6 +1441,116 @@ export type Greyswan = {
         {
           "name": "renterAmount",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "reviewerResolve",
+      "discriminator": [
+        174,
+        78,
+        148,
+        214,
+        196,
+        24,
+        151,
+        251
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "platformWallet",
+          "writable": true,
+          "address": "32tt6bRdV1bM9D9ZkgfPFz3kt44YgpfJ6yYhfz8kiYbD"
+        },
+        {
+          "name": "reviewer",
+          "signer": true
+        },
+        {
+          "name": "secondReviewer",
+          "signer": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "ownerBps",
+          "type": "u16"
         }
       ]
     },
@@ -1382,6 +1908,152 @@ export type Greyswan = {
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "voidVerdict",
+      "discriminator": [
+        37,
+        141,
+        60,
+        35,
+        143,
+        53,
+        1,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rental"
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdrawPool",
+      "discriminator": [
+        190,
+        43,
+        148,
+        248,
+        68,
+        5,
+        215,
+        136
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "recipient",
+          "docs": [
+            "lamports."
+          ],
+          "writable": true
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1435,6 +2107,19 @@ export type Greyswan = {
         134,
         26,
         58
+      ]
+    },
+    {
+      "name": "pool",
+      "discriminator": [
+        241,
+        154,
+        109,
+        4,
+        17,
+        177,
+        109,
+        188
       ]
     },
     {
@@ -1699,6 +2384,86 @@ export type Greyswan = {
       "code": 6046,
       "name": "inspectionWindowClosed",
       "msg": "The window to check the returned item has closed"
+    },
+    {
+      "code": 6047,
+      "name": "disputesPaused",
+      "msg": "Damage decisions are paused"
+    },
+    {
+      "code": 6048,
+      "name": "notVerdictKey",
+      "msg": "Only the damage review service can post this"
+    },
+    {
+      "code": 6049,
+      "name": "notReviewer",
+      "msg": "Only a reviewer can decide this"
+    },
+    {
+      "code": 6050,
+      "name": "wrongDisputeKind",
+      "msg": "This step doesn't apply to this kind of issue"
+    },
+    {
+      "code": 6051,
+      "name": "invalidDisputeStatus",
+      "msg": "This issue is not at a stage where this can be done"
+    },
+    {
+      "code": 6052,
+      "name": "invalidTierCount",
+      "msg": "A decision needs between 1 and 8 findings"
+    },
+    {
+      "code": 6053,
+      "name": "tierOutOfRange",
+      "msg": "Each finding's tier must be between 0 and 4"
+    },
+    {
+      "code": 6054,
+      "name": "needsHumanReview",
+      "msg": "This issue needs a human reviewer"
+    },
+    {
+      "code": 6055,
+      "name": "appealWindowClosed",
+      "msg": "The window to appeal has closed"
+    },
+    {
+      "code": 6056,
+      "name": "alreadyAppealed",
+      "msg": "You have already appealed this decision"
+    },
+    {
+      "code": 6057,
+      "name": "notRentalParty",
+      "msg": "Only the owner or renter can appeal"
+    },
+    {
+      "code": 6058,
+      "name": "appealWindowStillOpen",
+      "msg": "The window to appeal is still open"
+    },
+    {
+      "code": 6059,
+      "name": "appealNotExpired",
+      "msg": "The appeal is still within its review period"
+    },
+    {
+      "code": 6060,
+      "name": "secondReviewerRequired",
+      "msg": "This decision needs a second, different reviewer"
+    },
+    {
+      "code": 6061,
+      "name": "poolBalanceTooLow",
+      "msg": "The user protection pool doesn't hold enough for this"
+    },
+    {
+      "code": 6062,
+      "name": "sameOwnerAndRenter",
+      "msg": "The owner and renter are the same wallet"
     }
   ],
   "types": [
@@ -2007,11 +2772,91 @@ export type Greyswan = {
             "type": "u8"
           },
           {
+            "name": "tierCount",
+            "type": "u8"
+          },
+          {
+            "name": "tiers",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "verdictOwnerBps",
+            "type": "u16"
+          },
+          {
+            "name": "promptHash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "outputHash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verdictPostedAt",
+            "type": "i64"
+          },
+          {
+            "name": "appealDeadline",
+            "type": "i64"
+          },
+          {
+            "name": "appealExpiresAt",
+            "type": "i64"
+          },
+          {
+            "name": "ownerAppealed",
+            "type": "bool"
+          },
+          {
+            "name": "renterAppealed",
+            "type": "bool"
+          },
+          {
+            "name": "ownerBond",
+            "type": "u64"
+          },
+          {
+            "name": "renterBond",
+            "type": "u64"
+          },
+          {
+            "name": "finalOwnerBps",
+            "type": "u16"
+          },
+          {
+            "name": "resolvedBy",
+            "type": {
+              "array": [
+                "pubkey",
+                2
+              ]
+            }
+          },
+          {
+            "name": "resolvedAt",
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                384
+                193
               ]
             }
           }
@@ -2051,6 +2896,18 @@ export type Greyswan = {
         "variants": [
           {
             "name": "open"
+          },
+          {
+            "name": "verdictPosted"
+          },
+          {
+            "name": "appealed"
+          },
+          {
+            "name": "resolved"
+          },
+          {
+            "name": "voided"
           }
         ]
       }
@@ -2134,6 +2991,35 @@ export type Greyswan = {
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "pool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "totalReceived",
+            "type": "u64"
+          },
+          {
+            "name": "totalWithdrawn",
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
           }
         ]
       }

@@ -87,6 +87,76 @@
       ]
     },
     {
+      "name": "appeal",
+      "discriminator": [
+        250,
+        91,
+        1,
+        244,
+        179,
+        52,
+        75,
+        236
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rental"
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "appellant",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claim_refund",
       "discriminator": [
         15,
@@ -290,6 +360,172 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "expire_appeal",
+      "discriminator": [
+        103,
+        85,
+        227,
+        157,
+        166,
+        89,
+        78,
+        46
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "platform_wallet",
+          "writable": true,
+          "address": "32tt6bRdV1bM9D9ZkgfPFz3kt44YgpfJ6yYhfz8kiYbD"
+        },
+        {
+          "name": "caller",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "finalize_verdict",
+      "discriminator": [
+        97,
+        17,
+        118,
+        183,
+        198,
+        231,
+        123,
+        77
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "platform_wallet",
+          "writable": true,
+          "address": "32tt6bRdV1bM9D9ZkgfPFz3kt44YgpfJ6yYhfz8kiYbD"
+        },
+        {
+          "name": "caller",
+          "signer": true
         }
       ],
       "args": []
@@ -620,6 +856,69 @@
       ]
     },
     {
+      "name": "init_pool",
+      "discriminator": [
+        116,
+        233,
+        199,
+        204,
+        115,
+        159,
+        171,
+        36
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize",
       "discriminator": [
         175,
@@ -804,6 +1103,94 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "post_verdict",
+      "discriminator": [
+        198,
+        254,
+        149,
+        6,
+        94,
+        65,
+        180,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rental"
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "verdict_signer",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "tiers",
+          "type": "bytes"
+        },
+        {
+          "name": "prompt_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "output_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "reject_on_arrival",
@@ -995,8 +1382,37 @@
           "writable": true
         },
         {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "admin",
           "signer": true
+        },
+        {
+          "name": "second_reviewer",
+          "signer": true,
+          "optional": true
         },
         {
           "name": "owner",
@@ -1019,6 +1435,116 @@
         {
           "name": "renter_amount",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "reviewer_resolve",
+      "discriminator": [
+        174,
+        78,
+        148,
+        214,
+        196,
+        24,
+        151,
+        251
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "platform_wallet",
+          "writable": true,
+          "address": "32tt6bRdV1bM9D9ZkgfPFz3kt44YgpfJ6yYhfz8kiYbD"
+        },
+        {
+          "name": "reviewer",
+          "signer": true
+        },
+        {
+          "name": "second_reviewer",
+          "signer": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "owner_bps",
+          "type": "u16"
         }
       ]
     },
@@ -1376,6 +1902,152 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "void_verdict",
+      "discriminator": [
+        37,
+        141,
+        60,
+        35,
+        143,
+        53,
+        1,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rental"
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "renter",
+          "writable": true
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw_pool",
+      "discriminator": [
+        190,
+        43,
+        148,
+        248,
+        68,
+        5,
+        215,
+        136
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "recipient",
+          "docs": [
+            "lamports."
+          ],
+          "writable": true
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1429,6 +2101,19 @@
         134,
         26,
         58
+      ]
+    },
+    {
+      "name": "Pool",
+      "discriminator": [
+        241,
+        154,
+        109,
+        4,
+        17,
+        177,
+        109,
+        188
       ]
     },
     {
@@ -1693,6 +2378,86 @@
       "code": 6046,
       "name": "InspectionWindowClosed",
       "msg": "The window to check the returned item has closed"
+    },
+    {
+      "code": 6047,
+      "name": "DisputesPaused",
+      "msg": "Damage decisions are paused"
+    },
+    {
+      "code": 6048,
+      "name": "NotVerdictKey",
+      "msg": "Only the damage review service can post this"
+    },
+    {
+      "code": 6049,
+      "name": "NotReviewer",
+      "msg": "Only a reviewer can decide this"
+    },
+    {
+      "code": 6050,
+      "name": "WrongDisputeKind",
+      "msg": "This step doesn't apply to this kind of issue"
+    },
+    {
+      "code": 6051,
+      "name": "InvalidDisputeStatus",
+      "msg": "This issue is not at a stage where this can be done"
+    },
+    {
+      "code": 6052,
+      "name": "InvalidTierCount",
+      "msg": "A decision needs between 1 and 8 findings"
+    },
+    {
+      "code": 6053,
+      "name": "TierOutOfRange",
+      "msg": "Each finding's tier must be between 0 and 4"
+    },
+    {
+      "code": 6054,
+      "name": "NeedsHumanReview",
+      "msg": "This issue needs a human reviewer"
+    },
+    {
+      "code": 6055,
+      "name": "AppealWindowClosed",
+      "msg": "The window to appeal has closed"
+    },
+    {
+      "code": 6056,
+      "name": "AlreadyAppealed",
+      "msg": "You have already appealed this decision"
+    },
+    {
+      "code": 6057,
+      "name": "NotRentalParty",
+      "msg": "Only the owner or renter can appeal"
+    },
+    {
+      "code": 6058,
+      "name": "AppealWindowStillOpen",
+      "msg": "The window to appeal is still open"
+    },
+    {
+      "code": 6059,
+      "name": "AppealNotExpired",
+      "msg": "The appeal is still within its review period"
+    },
+    {
+      "code": 6060,
+      "name": "SecondReviewerRequired",
+      "msg": "This decision needs a second, different reviewer"
+    },
+    {
+      "code": 6061,
+      "name": "PoolBalanceTooLow",
+      "msg": "The user protection pool doesn't hold enough for this"
+    },
+    {
+      "code": 6062,
+      "name": "SameOwnerAndRenter",
+      "msg": "The owner and renter are the same wallet"
     }
   ],
   "types": [
@@ -2001,11 +2766,91 @@
             "type": "u8"
           },
           {
+            "name": "tier_count",
+            "type": "u8"
+          },
+          {
+            "name": "tiers",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "verdict_owner_bps",
+            "type": "u16"
+          },
+          {
+            "name": "prompt_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "output_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verdict_posted_at",
+            "type": "i64"
+          },
+          {
+            "name": "appeal_deadline",
+            "type": "i64"
+          },
+          {
+            "name": "appeal_expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "owner_appealed",
+            "type": "bool"
+          },
+          {
+            "name": "renter_appealed",
+            "type": "bool"
+          },
+          {
+            "name": "owner_bond",
+            "type": "u64"
+          },
+          {
+            "name": "renter_bond",
+            "type": "u64"
+          },
+          {
+            "name": "final_owner_bps",
+            "type": "u16"
+          },
+          {
+            "name": "resolved_by",
+            "type": {
+              "array": [
+                "pubkey",
+                2
+              ]
+            }
+          },
+          {
+            "name": "resolved_at",
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                384
+                193
               ]
             }
           }
@@ -2045,6 +2890,18 @@
         "variants": [
           {
             "name": "Open"
+          },
+          {
+            "name": "VerdictPosted"
+          },
+          {
+            "name": "Appealed"
+          },
+          {
+            "name": "Resolved"
+          },
+          {
+            "name": "Voided"
           }
         ]
       }
@@ -2128,6 +2985,35 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "total_received",
+            "type": "u64"
+          },
+          {
+            "name": "total_withdrawn",
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
           }
         ]
       }
