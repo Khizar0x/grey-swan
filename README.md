@@ -6,6 +6,12 @@ Live program on devnet: `2YnarssLwdKPi3Br6C6cUcAuKyyoDagXaHZWo3kykcko`
 
 ---
 
+## Demo
+
+Demo video: (link coming)
+
+---
+
 ## What Grey Swan Is
 
 Grey Swan is a peer-to-peer item rental marketplace that reduces the risk of renting high-value items to strangers.
@@ -69,7 +75,7 @@ If the owner never ships at all, the renter can call `claim_refund` once 7 days 
 When an owner flags damage after inspecting the returned item (`flag_return_issue`), the rental freezes into a disputed state.
 
 ### 1. AI Proposes Severity Tiers, Program Computes Payout
-- An off-chain vision pipeline compares the Phase 1 baseline photos against Phase 4 return photos.
+- An off-chain vision pipeline reviews the photos from all four handover phases together with the owner's close-ups of the damage, and looks for new damage that the earlier photos do not show.
 - The AI never decides dollar or SOL amounts directly. It only identifies verified new damage and assigns standardized severity tiers (0 to 4):
   - Tier 0: Normal Wear (no deposit withheld)
   - Tier 1: Cosmetic (rubric default: 15% deposit share)
@@ -163,7 +169,7 @@ The pipeline includes automated tests (`server/src/ai/test/attacks.test.ts`) cov
 - **Multisig Governance**: Moving the admin powers (Config changes such as rubric basis points and reviewer lists, setting a verdict aside, and user-protection pool payouts) to a Squads multisig, so no single key holds them.
 - **Background Worker**: Dedicated background queue to automatically poll on-chain dispute events, trigger the AI inspection pipeline, and sign `post_verdict` transactions without manual triggers.
 - **Email Reminders**: Automated notifications for upcoming return deadlines, courier tracking updates, and the appeal window countdown.
-- **Admin Emergency Cancellation**: On-chain instruction allowing mutual agreement cancellation if both parties abandon a rental prior to handover.
+- **Admin Cancel**: An admin cancel for rentals that cannot go ahead.
 
 ### Next
 - **Courier Tracking Webhook Integration**: Direct integration with carrier APIs (FedEx, UPS, Royal Mail, DHL) to automatically verify tracking status and advance handover phases upon delivery confirmation.
@@ -190,7 +196,18 @@ npm run dev            # Runs on http://localhost:8787
 
 Note: If `SESSION_SECRET` is left blank in `.env`, a development secret is automatically generated in `server/data/session-secret.txt`.
 
-### 2. Start the Frontend Application
+### 2. AI Dispute Pipeline (Optional)
+The pipeline needs `ANTHROPIC_API_KEY` in `server/.env` to call the model. The mock suite needs nothing:
+
+```bash
+cd server
+npm run ai:test                          # mock suite, no cost
+npm run ai:run-rental <rentalPubkey>     # runs a real case; a dry run unless you add --send
+```
+
+`--send` additionally needs `VERDICT_KEYPAIR_PATH` in `server/.env` and posts the verdict to devnet.
+
+### 3. Start the Frontend Application
 The frontend connects to Solana Devnet and proxies API calls to the local backend:
 
 ```bash
@@ -201,7 +218,10 @@ npm run dev   # Runs on http://localhost:5173
 
 Open `http://localhost:5173` in your browser and connect your Solana wallet on devnet.
 
-### 3. Running Anchor Tests (Optional)
+### 4. Reviewer Dashboard
+Open `/admin` while connected with the admin wallet or a reviewer wallet listed in the on-chain Config. It shows live counts and recent activity, and `/admin/disputes` lists every dispute with the questionnaires, photos and decision controls.
+
+### 5. Running Anchor Tests (Optional)
 If you have the Rust and Anchor toolchain installed locally and want to run the program tests:
 
 ```bash
