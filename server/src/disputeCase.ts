@@ -61,11 +61,18 @@ export async function buildCaseFile(inputs: CaseInputs): Promise<CaseFile> {
   await mkdir(inputs.photoDir, { recursive: true })
 
   const photos: CasePhoto[] = []
+  const skippedShots: Partial<Record<PhaseKey, string[]>> = {}
   for (const phase of Object.keys(PHASE_PREFIX) as PhaseKey[]) {
     const manifestCid = inputs.manifests[phase]
     if (!manifestCid) continue
-    const manifest = JSON.parse(new TextDecoder().decode(await fetchBytes(`${GATEWAY}${manifestCid}`))) as { photos?: unknown }
+    const manifest = JSON.parse(new TextDecoder().decode(await fetchBytes(`${GATEWAY}${manifestCid}`))) as { photos?: unknown; skipped?: unknown }
     const cids = Array.isArray(manifest.photos) ? manifest.photos.filter((c): c is string => typeof c === 'string') : []
+    // Older manifests have no `skipped` list; anything that is not a short
+    // list of short strings is ignored.
+    if (Array.isArray(manifest.skipped)) {
+      const ids = manifest.skipped.filter((x): x is string => typeof x === 'string' && x.length <= 40).slice(0, 10)
+      if (ids.length) skippedShots[phase] = ids
+    }
     for (const [i, cid] of cids.entries()) {
       const id = `${PHASE_PREFIX[phase]}-${i + 1}`
       const file = path.join(inputs.photoDir, `${id}.jpg`)
@@ -78,6 +85,7 @@ export async function buildCaseFile(inputs: CaseInputs): Promise<CaseFile> {
     caseId: `rental-${inputs.rentalPubkey}`,
     depositLamports: inputs.depositLamports,
     photos,
+    ...(Object.keys(skippedShots).length ? { skippedShots } : {}),
     owner: ownerPartyInput(inputs.owner),
     renter: renterPartyInput(inputs.renter),
   }

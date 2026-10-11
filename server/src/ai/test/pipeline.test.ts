@@ -200,3 +200,9 @@ test('live cap error routes to human', async () => {
   const r = await run(c, { client: { call: async () => { throw new LiveCapError('cap') } } })
   assert.ok(isHuman(r))
 })
+
+test('a deliberately skipped label shot does not route to a human', async () => {
+  const c = await getCase('honest_crack')
+  const r = await run({ ...c, skippedShots: { p1: ['label'], p4: ['label'] } })
+  assert.equal(r.decision.kind, 'POST_VERDICT')
+})

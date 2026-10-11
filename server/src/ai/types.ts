@@ -48,6 +48,9 @@ export interface CaseFile {
   caseId: string
   depositLamports: number // JS number is exact up to ~9e15 lamports (9M SOL)
   photos: CasePhoto[]
+  // Optional shots a party skipped on purpose, per phase (for example the
+  // label shot of an item with no label). Not a gap in the evidence.
+  skippedShots?: Partial<Record<PhaseKey, string[]>>
   owner: PartyInput
   renter: PartyInput
   mock?: MockScript

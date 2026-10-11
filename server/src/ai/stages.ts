@@ -125,7 +125,15 @@ export function photoParts(ctx: Ctx): Part[] {
 
 const photoPhase = (ctx: Ctx): Map<string, PhaseKey> => new Map(ctx.caseFile.photos.map((p) => [p.id, p.phase]))
 
-const photoListText = (ctx: Ctx) => ctx.caseFile.photos.map((p) => `${p.id} = phase ${p.phase}`).join('\n')
+const photoListText = (ctx: Ctx) => {
+  const lines = ctx.caseFile.photos.map((p) => `${p.id} = phase ${p.phase}`)
+  // Only present when someone skipped an optional shot on purpose; cases
+  // without any skipped shot produce exactly the same text as before.
+  for (const [phase, ids] of Object.entries(ctx.caseFile.skippedShots ?? {})) {
+    if (ids?.length) lines.push(`Skipped on purpose in phase ${phase} (no photo expected, not a gap): ${ids.join(', ')}`)
+  }
+  return lines.join('\n')
+}
 
 // ---- Layer 3: blind visual pass ---------------------------------------
 

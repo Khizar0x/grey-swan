@@ -59,3 +59,17 @@ test('buildCaseFile maps a rental and answers to the pipeline format', async () 
   assert.deepEqual(sanitiseAnswers(cf.owner.answers).suspicious, [])
   assert.deepEqual(sanitiseAnswers(cf.renter.answers).suspicious, [])
 })
+
+test('a skipped label shot is carried into the case file; old manifests have none', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'case-'))
+  const withSkip = {
+    ...files,
+    m1: enc.encode(JSON.stringify({ photos: ['a', 'b'], shots: [], skipped: ['label', 'accessories', 7, 'x'.repeat(50)], phaseCode: 'SWAN-BBBB' })),
+  }
+  const get = (table: Record<string, Uint8Array>) => async (url: string) => table[url.split('/').pop()!]
+  const cf = await buildCaseFile({ rentalPubkey: 'R2', depositLamports: 1, manifests: { p1: 'm1', p4: 'm4' }, owner, renter, photoDir: dir, fetchBytes: get(withSkip) })
+  assert.deepEqual(cf.skippedShots, { p1: ['label', 'accessories'] })
+  assert.equal(cf.photos.length, 3)
+  const old = await buildCaseFile({ rentalPubkey: 'R3', depositLamports: 1, manifests: { p1: 'm1', p4: 'm4' }, owner, renter, photoDir: dir, fetchBytes: get(files) })
+  assert.equal(old.skippedShots, undefined)
+})
