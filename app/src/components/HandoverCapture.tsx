@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchPhaseCode } from '../lib/phaseCodeApi'
 import { type CaptureSource, type ManifestShot, pinFile, pinHandoverManifest } from '../lib/ipfs'
-import { MISSING_ITEM_SHOTS, shotsForPhase } from '../lib/handoverShots'
+import { type ShotSpec, shotsForPhase } from '../lib/handoverShots'
 import { C, FONT_HEAD } from '../lib/theme'
 import { Btn } from './atoms'
 import { CameraCapture } from './CameraCapture'
@@ -21,19 +21,21 @@ export function HandoverCapture({
   rentalPubkey,
   phase,
   hasParcel,
-  variant,
+  specs: specsOverride,
   token,
   onChange,
 }: {
   rentalPubkey: string
-  phase: 1 | 2 | 3 | 4
+  // 1 to 4 are the handovers; 5 is the owner's close-ups for a damage dispute.
+  phase: 1 | 2 | 3 | 4 | 5
   hasParcel: boolean
-  // 'missing': the item never arrived, so the one photo is the delivery spot.
-  variant?: 'missing'
+  // Replaces the standard shot list (for example the delivery-spot photo when
+  // an item never arrived, or one close-up per damaged area).
+  specs?: ShotSpec[]
   token: string
   onChange: (manifestCid: string) => void
 }) {
-  const specs = useMemo(() => (variant === 'missing' ? MISSING_ITEM_SHOTS : shotsForPhase(phase, hasParcel)), [phase, hasParcel, variant])
+  const specs = useMemo(() => specsOverride ?? shotsForPhase(phase as 1 | 2 | 3 | 4, hasParcel), [phase, hasParcel, specsOverride])
   const [code, setCode] = useState<string | null>(null)
   const [codeError, setCodeError] = useState<string | null>(null)
   const [codeAttempt, setCodeAttempt] = useState(0)

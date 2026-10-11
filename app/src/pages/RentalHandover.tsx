@@ -6,14 +6,17 @@ import { Btn, TrustNote } from '../components/atoms'
 import { IconAlert, IconCheck } from '../components/icons'
 import { MessagesEntryRow } from '../components/MessagesEntryRow'
 import { DeadlinePanel } from '../components/DeadlinePanel'
+import { OwnerDisputeForm } from '../components/OwnerDisputeForm'
+import { DisputedView } from '../components/DisputedView'
 import { HandoverCapture } from '../components/HandoverCapture'
 import { RetryImage } from '../components/RetryImage'
 import { fetchAddress, saveAddress } from '../lib/addressApi'
 import { useAuthContext } from '../lib/AuthContext'
 import { availableActions, relevantDeadlines, type TimelineData, type TimeoutActionKey, toTimelineData } from '../lib/deadlines'
 import { type DeliveryMethod, fetchDeliveryMethod } from '../lib/deliveryApi'
+import { saveDisputeAnswers } from '../lib/disputeAnswersApi'
 import { formatSol } from '../lib/format'
-import { shotLabel } from '../lib/handoverShots'
+import { MISSING_ITEM_SHOTS, type ShotSpec, shotLabel } from '../lib/handoverShots'
 import { enumKey } from '../lib/listing'
 import {
   completeAfterInspectionDeadline,
@@ -342,34 +345,15 @@ export function RentalHandover() {
 
   // Guided camera step for one phase. Waits for the delivery method because
   // it decides whether a parcel shot is part of the list.
-  const renderCapture = (phase: 1 | 2 | 3 | 4, key: string, variant?: 'missing') =>
+  const renderCapture = (phase: 1 | 2 | 3 | 4, key: string, specs?: ShotSpec[]) =>
     token && deliveryMethod ? (
-      <HandoverCapture key={key} rentalPubkey={pubkey} phase={phase} hasParcel={deliveryMethod !== 'pickup'} variant={variant} token={token} onChange={setPhotos} />
+      <HandoverCapture key={key} rentalPubkey={pubkey} phase={phase} hasParcel={deliveryMethod !== 'pickup'} specs={specs} token={token} onChange={setPhotos} />
     ) : (
       <WaitingNote text="Loading…" />
     )
 
   if (statusKey === 'disputed') {
-    return (
-      <div className="mx-auto max-w-xl px-4 py-20 text-center sm:px-6">
-        <h2 className="mb-3 text-2xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-          Something's not right
-        </h2>
-        <p className="mb-2" style={{ color: C.muted }}>
-          We'll review the photos from each stage of the rental and look into what happened. Our team will be in touch within 24 hours.
-        </p>
-        {rental.disputeReason && (
-          <p className="mt-4 rounded-xl p-4 text-sm" style={{ background: 'rgba(184,92,66,0.08)', border: '1px solid rgba(184,92,66,0.28)', color: C.rust }}>
-            "{rental.disputeReason}"
-          </p>
-        )}
-        {isParty && token && (
-          <div className="mt-8 text-left">
-            <MessagesEntryRow rentalPubkey={pubkey} token={token} />
-          </div>
-        )}
-      </div>
-    )
+    return <DisputedView rentalPubkey={pubkey} rental={rental} token={token} isOwner={isOwner} isRenter={isRenter} />
   }
 
   if (statusKey === 'completed' || statusKey === 'resolved' || statusKey === 'refundedAuto') {
@@ -575,7 +559,7 @@ export function RentalHandover() {
             {isRenter ? (
               showRejectForm ? (
                 <>
-                  {renderCapture(2, rejectMode === 'missing' ? 'p2-missing' : 'p2-reject', rejectMode === 'missing' ? 'missing' : undefined)}
+                  {renderCapture(2, rejectMode === 'missing' ? 'p2-missing' : 'p2-reject', rejectMode === 'missing' ? MISSING_ITEM_SHOTS : undefined)}
                   <div>
                     <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>{rejectMode === 'missing' ? 'Tell us what happened' : "What's wrong?"}</label>
                     <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} style={{ ...INPUT_STYLE, resize: 'none' }} />
@@ -675,16 +659,23 @@ export function RentalHandover() {
             <StepHeader tint="green" role="Owner · Final review" title="All handover photos are in" body="Confirm the return to release the deposit, or flag an issue for review." />
             {isOwner ? (
               showDisputeForm ? (
-                <div className="rounded-xl p-4" style={{ border: '1px solid rgba(184,92,66,0.28)', background: 'rgba(184,92,66,0.08)' }}>
-                  <label className="mb-1.5 block text-sm font-medium" style={{ color: C.rust }}>What's not right?</label>
-                  <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} style={{ ...INPUT_STYLE, resize: 'none' }} />
-                  <div className="mt-3 flex gap-2">
-                    <Btn variant="danger" disabled={busy || !reason} onClick={() => runMutation(() => flagReturnIssue(program, rentalPubkey, rental.owner, reason))}>
-                      {busy ? 'Submitting…' : 'Flag this rental'}
-                    </Btn>
-                    <button onClick={() => setShowDisputeForm(false)} className="text-xs underline" style={{ color: C.faint }}>Cancel</button>
-                  </div>
-                </div>
+                token ? (
+                  <OwnerDisputeForm
+                    rentalPubkey={pubkey}
+                    token={token}
+                    busy={busy}
+                    onCancel={() => setShowDisputeForm(false)}
+                    onSubmit={(damageReason, answers) =>
+                      runMutation(
+                        () => flagReturnIssue(program, rentalPubkey, rental.owner, damageReason),
+                        async () => {
+                          await saveDisputeAnswers(pubkey, answers, token)
+                        },
+                        "Your report was sent, but we couldn't save your answers and photos. Open the rental again to add them.",
+                      )
+                    }
+                  />
+                ) : null
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">

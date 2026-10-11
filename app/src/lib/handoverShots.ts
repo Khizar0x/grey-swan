@@ -35,6 +35,7 @@ const PARCEL_UNOPENED: ShotSpec = {
 }
 
 export function shotLabel(id: string): string {
+  if (id.startsWith('closeup_')) return `Close-up: ${shotLabel(id.slice('closeup_'.length))}`
   return [...ITEM_SHOTS, PARCEL_PACKED, PARCEL_UNOPENED, ...MISSING_ITEM_SHOTS].find((s) => s.id === id)?.label ?? id
 }
 
@@ -50,3 +51,16 @@ export function shotsForPhase(phase: 1 | 2 | 3 | 4, hasParcel: boolean): ShotSpe
 export const MISSING_ITEM_SHOTS: ShotSpec[] = [
   { id: 'delivery_spot', label: 'Where it should have arrived', hint: 'Your door, porch or delivery spot, with your paper code beside it.', required: true, showsCode: true },
 ]
+
+// One required close-up per area the owner says is damaged.
+export function closeupShots(areaIds: string[]): ShotSpec[] {
+  return areaIds.map((id, i) => ({
+    id: `closeup_${id}`,
+    label: `Close-up: ${shotLabel(id)}`,
+    hint: 'Get close to the damage so it is clear and in focus.',
+    required: true,
+    showsCode: i === 0,
+  }))
+}
+
+export const AREA_CHOICES: { id: string; label: string }[] = ITEM_SHOTS.map((s) => ({ id: s.id, label: s.label }))
