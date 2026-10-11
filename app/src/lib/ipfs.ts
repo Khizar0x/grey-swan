@@ -40,6 +40,9 @@ export interface ManifestShot {
 interface PhotoManifest {
   photos: string[]
   shots?: ManifestShot[]
+  // Optional shots the person deliberately skipped (for example "label" when
+  // the item has none). Absent on older manifests.
+  skipped?: string[]
   phaseCode?: string
 }
 
@@ -48,6 +51,8 @@ export interface ManifestDetail {
   // Same length as `photos`; an entry is undefined for photos without shot
   // info (old manifests, listing photos).
   shots: (ManifestShot | undefined)[]
+  // Shot ids skipped on purpose, as opposed to simply not photographed.
+  skipped: string[]
   phaseCode: string | null
 }
 
@@ -109,8 +114,8 @@ export async function pinManifest(photoCids: string[]): Promise<string> {
 
 // Handover manifest: same CID list as pinManifest, plus what each photo shows,
 // how it was taken and the server-issued phase code.
-export async function pinHandoverManifest(photoCids: string[], shots: ManifestShot[], phaseCode: string): Promise<string> {
-  const manifest: PhotoManifest = { photos: photoCids, shots, phaseCode }
+export async function pinHandoverManifest(photoCids: string[], shots: ManifestShot[], phaseCode: string, skipped: string[] = []): Promise<string> {
+  const manifest: PhotoManifest = { photos: photoCids, shots, ...(skipped.length ? { skipped } : {}), phaseCode }
   const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' })
   return pinFile(manifestBlob, 'manifest.json')
 }
@@ -161,6 +166,7 @@ export async function resolveManifestDetail(cid: string): Promise<ManifestDetail
   return {
     photos,
     shots: photos.map((_, i) => parseShot(rawShots[i])),
+    skipped: Array.isArray(manifest.skipped) ? manifest.skipped.filter((x): x is string => typeof x === 'string') : [],
     phaseCode: typeof manifest.phaseCode === 'string' ? manifest.phaseCode : null,
   }
 }

@@ -5,6 +5,7 @@ export function usePhotoUrls(manifestCid: string | undefined) {
   const [urls, setUrls] = useState<string[]>([])
   // Only filled for handover manifests from the guided camera flow.
   const [shots, setShots] = useState<(ManifestShot | undefined)[]>([])
+  const [skipped, setSkipped] = useState<string[]>([])
   const [phaseCode, setPhaseCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   // resolveManifest's own retry budget (lib/ipfs.ts) is bounded — measured
@@ -20,6 +21,7 @@ export function usePhotoUrls(manifestCid: string | undefined) {
     if (!manifestCid) {
       setUrls([])
       setShots([])
+      setSkipped([])
       setPhaseCode(null)
       setError(false)
       return
@@ -33,6 +35,7 @@ export function usePhotoUrls(manifestCid: string | undefined) {
         if (cancelled) return
         setUrls(detail.photos.map(gatewayUrl))
         setShots(detail.shots)
+        setSkipped(detail.skipped)
         setPhaseCode(detail.phaseCode)
       })
       .catch(() => {
@@ -54,5 +57,5 @@ export function usePhotoUrls(manifestCid: string | undefined) {
 
   const retry = useCallback(() => setAttempt((a) => a + 1), [])
 
-  return { urls, shots, phaseCode, loading, error, retry }
+  return { urls, shots, skipped, phaseCode, loading, error, retry }
 }

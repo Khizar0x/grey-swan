@@ -8,7 +8,7 @@ import { MessagesEntryRow } from '../components/MessagesEntryRow'
 import { DeadlinePanel } from '../components/DeadlinePanel'
 import { OwnerDisputeForm } from '../components/OwnerDisputeForm'
 import { DisputedView } from '../components/DisputedView'
-import { HandoverCapture } from '../components/HandoverCapture'
+import { clearSavedShots, HandoverCapture } from '../components/HandoverCapture'
 import { RetryImage } from '../components/RetryImage'
 import { fetchAddress, saveAddress } from '../lib/addressApi'
 import { useAuthContext } from '../lib/AuthContext'
@@ -304,8 +304,14 @@ export function RentalHandover() {
     setAddressWarning(null)
     setUnconfirmed(false)
     setBusy(true)
+    const stateBefore = rental ? `${enumKey(rental.status)}:${enumKey(rental.currentPhase)}:${enumKey(rental.disputeKind)}` : ''
     try {
       await withTimeout(fn())
+      // This step is on the chain now, so its saved photos are no longer needed.
+      if (pubkey) {
+        clearSavedShots(pubkey, step)
+        clearSavedShots(pubkey, 5)
+      }
       if (afterSuccess) {
         try {
           await afterSuccess()
@@ -337,6 +343,25 @@ export function RentalHandover() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      // The wallet timeout above (or a slow confirmation) can report a
+      // failure for a step that actually went through. Without this check the
+      // page keeps offering the same step, and resubmitting it fails in the
+      // wallet's simulation because the step's account already exists. So
+      // look at the real state a few times, and if it moved on, show that.
+      const refused = /reject|denied|declined|cancel/i.test(err instanceof Error ? err.message : String(err))
+      for (const delay of refused ? [] : [1500, 4000, 8000]) {
+        await new Promise((resolve) => setTimeout(resolve, delay))
+        try {
+          const latest = await program.account.rental.fetch(new PublicKey(pubkey ?? ''))
+          if (`${enumKey(latest.status)}:${enumKey(latest.currentPhase)}:${enumKey(latest.disputeKind)}` !== stateBefore) {
+            await fetchRental()
+            setError(null)
+            break
+          }
+        } catch {
+          // Leave the original error showing; the user can reload.
+        }
+      }
     } finally {
       setBusy(false)
       mutationInFlightRef.current = false
@@ -502,7 +527,7 @@ export function RentalHandover() {
                   {renderCapture(1, 'p1-pickup')}
                   <TrustNote />
                   <Btn full disabled={busy || !photos} onClick={() => runMutation(() => submitPhase1(program, rentalPubkey, rental.owner, photos, PICKUP_HANDOVER_NOTE))}>
-                    {busy ? 'Submitting…' : 'Handed over in person'}
+                    {busy ? 'Waiting for your wallet to approve…' : 'Handed over in person'}
                   </Btn>
                 </>
               ) : (
@@ -543,7 +568,7 @@ export function RentalHandover() {
                       )
                     }
                   >
-                    {busy ? 'Submitting…' : 'Continue'}
+                    {busy ? 'Waiting for your wallet to approve…' : 'Continue'}
                   </Btn>
                 </>
               )
@@ -565,7 +590,7 @@ export function RentalHandover() {
                     <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} style={{ ...INPUT_STYLE, resize: 'none' }} />
                   </div>
                   <Btn variant="danger" full disabled={busy || !photos || !reason} onClick={() => runMutation(() => rejectOnArrival(program, rentalPubkey, rental.renter, photos, reason))}>
-                    {busy ? 'Submitting…' : rejectMode === 'missing' ? "Report that it hasn't arrived" : 'Report a problem'}
+                    {busy ? 'Waiting for your wallet to approve…' : rejectMode === 'missing' ? "Report that it hasn't arrived" : 'Report a problem'}
                   </Btn>
                   <button onClick={() => { setShowRejectForm(false); setRejectMode('broken') }} className="text-xs underline" style={{ color: C.faint }}>Cancel</button>
                 </>
@@ -576,7 +601,7 @@ export function RentalHandover() {
                     <h3 className="mb-1 font-semibold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>Everything arrived as expected</h3>
                     <p className="mb-4 text-sm" style={{ color: C.muted }}>Confirm once you've received the item and had a chance to check it.</p>
                     <Btn full disabled={busy || !photos} onClick={() => runMutation(() => submitPhase2(program, rentalPubkey, rental.renter, photos))}>
-                      {busy ? 'Submitting…' : 'Confirm receipt'}
+                      {busy ? 'Waiting for your wallet to approve…' : 'Confirm receipt'}
                     </Btn>
                   </div>
                   <TrustNote />
@@ -614,7 +639,7 @@ export function RentalHandover() {
                   {renderCapture(3, 'p3-pickup')}
                   <TrustNote />
                   <Btn full disabled={busy || !photos} onClick={() => runMutation(() => submitPhase3(program, rentalPubkey, rental.renter, photos, PICKUP_HANDOVER_NOTE))}>
-                    {busy ? 'Submitting…' : 'Handed over in person'}
+                    {busy ? 'Waiting for your wallet to approve…' : 'Handed over in person'}
                   </Btn>
                 </>
               ) : (
@@ -627,7 +652,7 @@ export function RentalHandover() {
                   </div>
                   <TrustNote />
                   <Btn full disabled={busy || !photos || !tracking} onClick={() => runMutation(() => submitPhase3(program, rentalPubkey, rental.renter, photos, tracking))}>
-                    {busy ? 'Submitting…' : 'Continue'}
+                    {busy ? 'Waiting for your wallet to approve…' : 'Continue'}
                   </Btn>
                 </>
               )
@@ -645,7 +670,7 @@ export function RentalHandover() {
                 {renderCapture(4, 'p4')}
                 <TrustNote />
                 <Btn full disabled={busy || !photos} onClick={() => runMutation(() => submitPhase4(program, rentalPubkey, rental.owner, photos))}>
-                  {busy ? 'Submitting…' : 'Continue'}
+                  {busy ? 'Waiting for your wallet to approve…' : 'Continue'}
                 </Btn>
               </>
             ) : (
@@ -749,7 +774,7 @@ function WaitingNote({ text }: { text: string }) {
 }
 
 function PhaseRecap({ title, tracking, manifestCid }: { title: string; tracking?: string; manifestCid: string }) {
-  const { urls, shots, phaseCode, loading, error, retry } = usePhotoUrls(manifestCid || undefined)
+  const { urls, shots, skipped, phaseCode, loading, error, retry } = usePhotoUrls(manifestCid || undefined)
   if (!manifestCid) return null
   return (
     <div>
@@ -798,6 +823,11 @@ function PhaseRecap({ title, tracking, manifestCid }: { title: string; tracking?
             )
           })}
         </div>
+      )}
+      {skipped.length > 0 && (
+        <p className="mt-2 text-xs" style={{ color: C.faint }}>
+          Skipped on purpose: {skipped.map(shotLabel).join(', ')}
+        </p>
       )}
     </div>
   )

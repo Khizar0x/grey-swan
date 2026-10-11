@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchPhaseCode } from '../lib/phaseCodeApi'
-import { type CaptureSource, type ManifestShot, pinFile, pinHandoverManifest } from '../lib/ipfs'
+import { type CaptureSource, gatewayUrl, type ManifestShot, pinFile, pinHandoverManifest } from '../lib/ipfs'
 import { type ShotSpec, shotsForPhase } from '../lib/handoverShots'
 import { C, FONT_HEAD } from '../lib/theme'
 import { Btn } from './atoms'
@@ -11,6 +11,63 @@ interface ShotState {
   capture: CaptureSource
   status: 'uploading' | 'done' | 'error'
   cid?: string
+}
+
+// Chosen shots are kept in this browser so a reload does not lose them. Only
+// pinned IDs and flags are stored, never image bytes. The key includes the
+// shot list, so a different list for the same phase (for example the
+// "item never arrived" photo) keeps its own saved set.
+interface SavedShots {
+  code: string
+  shots: Record<string, { cid: string; capture: CaptureSource }>
+  skipped: string[]
+}
+
+const SAVED_PREFIX = 'gs-shots:v1:'
+
+function savedKey(rentalPubkey: string, phase: number, specs: ShotSpec[]) {
+  return `${SAVED_PREFIX}${rentalPubkey}:${phase}:${specs.map((s) => s.id).join(',')}`
+}
+
+function loadSaved(key: string, specs: ShotSpec[]): SavedShots | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const v = JSON.parse(raw) as Partial<SavedShots>
+    if (typeof v.code !== 'string' || !v.shots || typeof v.shots !== 'object') return null
+    const ids = new Set(specs.map((s) => s.id))
+    const shots: SavedShots['shots'] = {}
+    for (const [id, shot] of Object.entries(v.shots)) {
+      if (ids.has(id) && shot && typeof shot.cid === 'string' && shot.cid) {
+        shots[id] = { cid: shot.cid, capture: shot.capture === 'uploaded' ? 'uploaded' : 'captured' }
+      }
+    }
+    const skipped = Array.isArray(v.skipped) ? v.skipped.filter((id): id is string => typeof id === 'string' && ids.has(id)) : []
+    return { code: v.code, shots, skipped }
+  } catch {
+    return null
+  }
+}
+
+function writeSaved(key: string, value: SavedShots | null) {
+  try {
+    if (value) localStorage.setItem(key, JSON.stringify(value))
+    else localStorage.removeItem(key)
+  } catch {
+    // Storage blocked or full: the page works the same, just without saving.
+  }
+}
+
+// Called once a phase has been submitted, so old photos never come back.
+export function clearSavedShots(rentalPubkey: string, phase: number) {
+  try {
+    const prefix = `${SAVED_PREFIX}${rentalPubkey}:${phase}:`
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(prefix)) localStorage.removeItem(key)
+    }
+  } catch {
+    // Nothing to clear without storage.
+  }
 }
 
 // Guided, camera-only photo step for one handover phase. It reports a single
@@ -39,8 +96,19 @@ export function HandoverCapture({
   const [code, setCode] = useState<string | null>(null)
   const [codeError, setCodeError] = useState<string | null>(null)
   const [codeAttempt, setCodeAttempt] = useState(0)
-  const [shots, setShots] = useState<Record<string, ShotState>>({})
-  const [active, setActive] = useState<string | null>(specs[0]?.id ?? null)
+  const storageKey = savedKey(rentalPubkey, phase, specs)
+  const [saved] = useState(() => loadSaved(storageKey, specs))
+  const [shots, setShots] = useState<Record<string, ShotState>>(() =>
+    Object.fromEntries(
+      Object.entries(saved?.shots ?? {}).map(([id, v]) => [id, { previewUrl: gatewayUrl(v.cid), capture: v.capture, status: 'done' as const, cid: v.cid }]),
+    ),
+  )
+  // Optional shots the person chose to skip, recorded in the manifest.
+  const [skipped, setSkipped] = useState<string[]>(saved?.skipped ?? [])
+  const skippedRef = useRef(skipped)
+  const [active, setActive] = useState<string | null>(
+    () => specs.find((s) => !saved?.shots[s.id] && !saved?.skipped.includes(s.id))?.id ?? specs[0]?.id ?? null,
+  )
   const [manifestState, setManifestState] = useState<'idle' | 'pinning' | 'error'>('idle')
   const [manifestAttempt, setManifestAttempt] = useState(0)
 
@@ -49,6 +117,7 @@ export function HandoverCapture({
   useEffect(() => {
     onChangeRef.current = onChange
     shotsRef.current = shots
+    skippedRef.current = skipped
   })
 
   // A stale CID from a previous mount (for example switching between the
@@ -62,7 +131,16 @@ export function HandoverCapture({
     setCodeError(null)
     fetchPhaseCode(rentalPubkey, phase, token)
       .then((c) => {
-        if (!cancelled) setCode(c)
+        if (cancelled) return
+        // Saved photos belong to the code they were taken under.
+        if (saved && saved.code !== c) {
+          shotsRef.current = {}
+          skippedRef.current = []
+          setShots({})
+          setSkipped([])
+          setActive(specs[0]?.id ?? null)
+        }
+        setCode(c)
       })
       .catch((err) => {
         if (!cancelled) setCodeError(err instanceof Error ? err.message : String(err))
@@ -70,7 +148,25 @@ export function HandoverCapture({
     return () => {
       cancelled = true
     }
+    // saved and specs are fixed for this mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rentalPubkey, phase, token, codeAttempt])
+
+  // Keep the saved copy in step with what is on screen. Waits for the code so
+  // a stale set is never written under a code it was not taken with.
+  useEffect(() => {
+    if (!code) return
+    const done = Object.entries(shots).filter(([, v]) => v.status === 'done' && v.cid)
+    if (done.length === 0 && skipped.length === 0) {
+      writeSaved(storageKey, null)
+      return
+    }
+    writeSaved(storageKey, {
+      code,
+      shots: Object.fromEntries(done.map(([id, v]) => [id, { cid: v.cid as string, capture: v.capture }])),
+      skipped,
+    })
+  }, [code, shots, skipped, storageKey])
 
   useEffect(
     () => () => {
@@ -84,7 +180,7 @@ export function HandoverCapture({
   const anyUploading = specs.some((s) => shots[s.id]?.status === 'uploading')
   const complete = requiredDone === requiredTotal && !anyUploading
   // Changes whenever a photo is added, replaced or removed.
-  const cidKey = specs.map((s) => `${s.id}:${shots[s.id]?.status === 'done' ? shots[s.id].cid : ''}`).join('|')
+  const cidKey = specs.map((s) => `${s.id}:${shots[s.id]?.status === 'done' ? shots[s.id].cid : ''}`).join('|') + `#${skipped.join(',')}`
 
   useEffect(() => {
     onChangeRef.current('')
@@ -100,6 +196,7 @@ export function HandoverCapture({
       present.map((s) => shotsRef.current[s.id].cid as string),
       meta,
       code,
+      specs.filter((s) => !s.required && skippedRef.current.includes(s.id) && shotsRef.current[s.id]?.status !== 'done').map((s) => s.id),
     )
       .then((cid) => {
         if (cancelled) return
@@ -116,7 +213,8 @@ export function HandoverCapture({
   }, [complete, code, cidKey, manifestAttempt, specs])
 
   const nextMissing = useCallback(
-    (from: Record<string, ShotState>, skip?: string) => specs.find((s) => s.id !== skip && !from[s.id])?.id ?? null,
+    (from: Record<string, ShotState>, skip?: string) =>
+      specs.find((s) => s.id !== skip && !from[s.id] && !skippedRef.current.includes(s.id))?.id ?? null,
     [specs],
   )
 
@@ -126,6 +224,9 @@ export function HandoverCapture({
     if (previous) URL.revokeObjectURL(previous.previewUrl)
     const next: Record<string, ShotState> = { ...shotsRef.current, [shotId]: { previewUrl, capture: source, status: 'uploading' } }
     shotsRef.current = next
+    // Taking a photo of a shot undoes an earlier skip.
+    skippedRef.current = skippedRef.current.filter((id) => id !== shotId)
+    setSkipped(skippedRef.current)
     setShots(next)
     setActive(nextMissing(next))
     pinFile(blob, `${shotId}.jpg`)
@@ -196,8 +297,17 @@ export function HandoverCapture({
               </div>
               <CameraCapture onCapture={handleCapture(activeSpec.id)} />
               {!activeSpec.required && (
-                <button type="button" className="self-start text-xs underline" style={{ color: C.faint }} onClick={() => setActive(nextMissing(shots, activeSpec.id))}>
-                  Skip this one
+                <button
+                  type="button"
+                  className="self-start text-xs underline"
+                  style={{ color: C.faint }}
+                  onClick={() => {
+                    skippedRef.current = [...skippedRef.current.filter((id) => id !== activeSpec.id), activeSpec.id]
+                    setSkipped(skippedRef.current)
+                    setActive(nextMissing(shots, activeSpec.id))
+                  }}
+                >
+                  {activeSpec.skipLabel ?? 'Skip this one'}
                 </button>
               )}
             </div>
@@ -219,13 +329,13 @@ export function HandoverCapture({
                       className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg text-xs"
                       style={{ background: C.surface2, border: `1px solid ${active === s.id ? C.primary : st?.status === 'error' ? C.rust : C.border}`, color: C.faint }}
                     >
-                      {st ? <img src={st.previewUrl} alt={s.label} className="h-full w-full object-cover" /> : s.required ? 'Needed' : 'Optional'}
+                      {st ? <img src={st.previewUrl} alt={s.label} className="h-full w-full object-cover" /> : skipped.includes(s.id) ? 'Skipped' : s.required ? 'Needed' : 'Optional'}
                     </span>
                     <span className="text-xs font-medium" style={{ color: C.muted }}>
                       {s.label}
                     </span>
                     <span className="text-xs" style={{ color: st?.status === 'error' ? C.rust : C.faint }}>
-                      {!st ? ' ' : st.status === 'uploading' ? 'Saving…' : st.status === 'error' ? 'Failed, retake' : st.capture === 'uploaded' ? 'Uploaded, not captured' : 'Retake'}
+                      {!st ? (skipped.includes(s.id) ? 'Tap to add a photo' : ' ') : st.status === 'uploading' ? 'Saving…' : st.status === 'error' ? 'Failed, retake' : st.capture === 'uploaded' ? 'Uploaded, not captured' : 'Retake'}
                     </span>
                   </button>
                 </li>

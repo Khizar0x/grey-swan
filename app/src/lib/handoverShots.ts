@@ -5,6 +5,8 @@ export interface ShotSpec {
   label: string
   hint: string
   required: boolean
+  // Optional shots only: the wording of the button that skips them on purpose.
+  skipLabel?: string
   // The phase code must be written on paper and visible in this shot.
   showsCode?: boolean
 }
@@ -16,8 +18,8 @@ const ITEM_SHOTS: ShotSpec[] = [
   { id: 'right', label: 'Right side', hint: 'The right side of the item.', required: true },
   { id: 'top', label: 'Top', hint: 'The item from above.', required: true },
   { id: 'underside', label: 'Underside', hint: 'The bottom of the item.', required: true },
-  { id: 'label', label: 'Label or serial number', hint: 'Any label, serial number or model plate, close enough to read.', required: true },
-  { id: 'accessories', label: 'Accessories', hint: 'Everything that comes with it (cables, cases, chargers). Skip if there are none.', required: false },
+  { id: 'label', label: 'Label or serial number', hint: 'Any label, serial number or model plate, close enough to read. Skip it if the item has none.', required: false, skipLabel: 'This item has no label or serial number' },
+  { id: 'accessories', label: 'Accessories', hint: 'Everything that comes with it (cables, cases, chargers). Skip if there are none.', required: false, skipLabel: 'This item has no accessories' },
 ]
 
 const PARCEL_PACKED: ShotSpec = {
