@@ -166,27 +166,36 @@ fn rentals_and_resolve_dispute_work_after_migrating_real_config() {
     phase4(&mut svm, rental, &owner).unwrap();
     flag_return_issue(&mut svm, rental, &owner).unwrap();
 
+    // dispute-2b: a damage dispute is decided with reviewer_resolve, which
+    // needs the user-protection pool (an admin creates it once after the
+    // migration). Previously this test used resolve_dispute, which now
+    // refuses ReturnIssue disputes that have a Dispute account.
+    send_as(&mut svm, init_pool_ix(admin), admin).unwrap();
     let renter_before = lamports(&svm, &renter.pubkey());
     let owner_before = lamports(&svm, &owner.pubkey());
     send_as(
         &mut svm,
         ix(
-            greyswan::instruction::ResolveDispute { owner_amount: 5_000_000, renter_amount: TOTAL_HELD - 5_000_000 },
-            greyswan::accounts::ResolveDispute {
+            greyswan::instruction::ReviewerResolve { owner_bps: 2_500 },
+            greyswan::accounts::ReviewerResolve {
                 config: config_pda(),
+                pool: pool_pda(),
                 listing,
                 rental,
-                admin,
+                dispute: dispute_pda(&rental),
                 owner: owner.pubkey(),
                 renter: renter.pubkey(),
-                system_program: system_program::ID,
+                platform_wallet: greyswan::PLATFORM_WALLET,
+                reviewer: admin,
+                second_reviewer: None,
             },
         ),
         admin,
     )
     .unwrap();
-    assert_eq!(lamports(&svm, &owner.pubkey()), owner_before + 5_000_000);
-    assert_eq!(lamports(&svm, &renter.pubkey()), renter_before + TOTAL_HELD - 5_000_000);
+    let rental_fee = TOTAL_HELD - DEPOSIT;
+    assert_eq!(lamports(&svm, &owner.pubkey()), owner_before + rental_fee - rental_fee / 10 + DEPOSIT / 4);
+    assert_eq!(lamports(&svm, &renter.pubkey()), renter_before + DEPOSIT - DEPOSIT / 4);
     assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Resolved);
 }
 

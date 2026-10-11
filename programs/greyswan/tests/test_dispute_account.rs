@@ -77,9 +77,37 @@ fn reject_on_arrival_opens_dispute_paid_by_renter() {
 }
 
 #[test]
-fn resolve_dispute_leaves_dispute_account_open_for_now() {
-    // resolve_dispute is deliberately unchanged in this phase; closing out
-    // the Dispute account is dispute-2b's job.
+fn resolve_dispute_marks_the_dispute_account_resolved() {
+    // dispute-2b: resolve_dispute now closes out the Dispute account it
+    // settles (previously it left it Open).
+    let mut svm = setup();
+    let admin = init_test_config(&mut svm);
+    let (owner, renter) = (funded(&mut svm), funded(&mut svm));
+    let listing = list_item(&mut svm, &owner, "Canon R5");
+    let rental = rent(&mut svm, listing, &renter);
+    phase1(&mut svm, rental, &owner).unwrap();
+    reject_on_arrival(&mut svm, rental, &renter).unwrap();
+    warp(&mut svm, 100);
+
+    send(
+        &mut svm,
+        resolve_dispute_ix(listing, rental, admin.pubkey(), owner.pubkey(), renter.pubkey(), 0, TOTAL_HELD),
+        &admin,
+        &[&admin],
+    )
+    .unwrap();
+    assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Resolved);
+    let dispute = read::<Dispute>(&svm, &dispute_pda(&rental));
+    assert_eq!(dispute.status, DisputeStatus::Resolved);
+    assert_eq!(dispute.resolved_by, [admin.pubkey(), Pubkey::default()]);
+    assert_eq!(dispute.resolved_at, START_TIME + 100);
+}
+
+#[test]
+fn resolve_dispute_refuses_a_damage_dispute_with_a_dispute_account() {
+    // dispute-2b: ReturnIssue disputes go through the verdict engine
+    // (reviewer_resolve), which enforces the second reviewer for Major
+    // damage and takes the platform fee. Previously this resolved it.
     let mut svm = setup();
     let admin = init_test_config(&mut svm);
     let (owner, renter) = (funded(&mut svm), funded(&mut svm));
@@ -88,25 +116,14 @@ fn resolve_dispute_leaves_dispute_account_open_for_now() {
     all_phases(&mut svm, rental, &owner, &renter);
     flag_return_issue(&mut svm, rental, &owner).unwrap();
 
-    send(
+    let result = send(
         &mut svm,
-        ix(
-            greyswan::instruction::ResolveDispute { owner_amount: TOTAL_HELD, renter_amount: 0 },
-            greyswan::accounts::ResolveDispute {
-                config: config_pda(),
-                listing,
-                rental,
-                admin: admin.pubkey(),
-                owner: owner.pubkey(),
-                renter: renter.pubkey(),
-                system_program: system_program::ID,
-            },
-        ),
+        resolve_dispute_ix(listing, rental, admin.pubkey(), owner.pubkey(), renter.pubkey(), TOTAL_HELD, 0),
         &admin,
         &[&admin],
-    )
-    .unwrap();
-    assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Resolved);
+    );
+    assert_program_err(result, greyswan::error::ErrorCode::WrongDisputeKind);
+    assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Disputed);
     assert_eq!(read::<Dispute>(&svm, &dispute_pda(&rental)).status, DisputeStatus::Open);
 }
 
@@ -148,6 +165,8 @@ fn legacy_devnet_dispute_without_dispute_account_still_resolves() {
                 config: config_pda(),
                 listing,
                 rental,
+                dispute: common::dispute_pda(&rental),
+                second_reviewer: None,
                 admin,
                 owner: state.owner,
                 renter: state.renter,

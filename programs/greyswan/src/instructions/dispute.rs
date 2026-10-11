@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
 use crate::instructions::handover::{check_arrival_deadline, load_timeline};
+use crate::instructions::verdict::second_reviewer_key;
 use crate::state::{
     Config, Dispute, DisputeKind, DisputeStatus, HandoverPhase, Listing, Rental, RentalStatus,
     RentalTimeline,
@@ -332,23 +333,50 @@ pub fn handle_admin_open_dispute(ctx: Context<AdminOpenDispute>, reason: String)
     Ok(())
 }
 
-// ---------- Admin resolves the dispute ----------
+// ---------- A reviewer resolves a dispute by splitting the funds ----------
+
+// For every dispute kind except a ReturnIssue with a Dispute account (those
+// go through the verdict engine: post_verdict / finalize_verdict /
+// reviewer_resolve). The reviewer names exact amounts; no platform fee.
+// Legacy disputes from before Dispute accounts existed, of any kind, stay
+// resolvable here.
+
+/// Reads the rental's Dispute account if it has one. The address is pinned
+/// by seeds; it is either ours or an address nothing was created at
+/// (disputes opened before Dispute accounts existed).
+fn load_dispute(info: &AccountInfo) -> Result<Option<Box<Dispute>>> {
+    if info.owner == &crate::ID {
+        let data = info.try_borrow_data()?;
+        Ok(Some(Box::new(Dispute::try_deserialize(&mut &data[..])?)))
+    } else {
+        require!(info.data_is_empty(), crate::error::ErrorCode::InvalidDisputeStatus);
+        Ok(None)
+    }
+}
 
 #[derive(Accounts)]
 pub struct ResolveDispute<'info> {
-    #[account(seeds = [b"config"], bump = config.bump)]
-    pub config: Account<'info, Config>,
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
 
     #[account(mut)]
-    pub listing: Account<'info, Listing>,
+    pub listing: Box<Account<'info, Listing>>,
 
     #[account(
         mut,
         constraint = listing.key() == rental.listing @ crate::error::ErrorCode::ListingMismatch,
     )]
-    pub rental: Account<'info, Rental>,
+    pub rental: Box<Account<'info, Rental>>,
 
+    /// CHECK: may not exist (legacy disputes); see load_dispute.
+    #[account(mut, seeds = [DISPUTE_SEED, rental.key().as_ref()], bump)]
+    pub dispute: UncheckedAccount<'info>,
+
+    // Named `admin` for existing clients; any Config reviewer may sign.
     pub admin: Signer<'info>,
+
+    // Needed when the funds held are above two_reviewer_threshold_lamports.
+    pub second_reviewer: Option<Signer<'info>>,
 
     /// CHECK: verified against rental.owner in the handler
     #[account(mut)]
@@ -366,11 +394,8 @@ pub fn handle_resolve_dispute(
     owner_amount: u64,
     renter_amount: u64,
 ) -> Result<()> {
-    require_keys_eq!(
-        ctx.accounts.admin.key(),
-        ctx.accounts.config.admin,
-        crate::error::ErrorCode::NotAdmin,
-    );
+    let reviewer = ctx.accounts.admin.key();
+    require!(ctx.accounts.config.is_reviewer(&reviewer), crate::error::ErrorCode::NotReviewer);
     require_keys_eq!(
         ctx.accounts.rental.owner,
         ctx.accounts.owner.key(),
@@ -385,6 +410,12 @@ pub fn handle_resolve_dispute(
         ctx.accounts.rental.status == RentalStatus::Disputed,
         crate::error::ErrorCode::NotDisputed,
     );
+
+    let dispute = load_dispute(&ctx.accounts.dispute)?;
+    if let Some(dispute) = &dispute {
+        require!(dispute.kind != DisputeKind::ReturnIssue, crate::error::ErrorCode::WrongDisputeKind);
+        require!(dispute.status == DisputeStatus::Open, crate::error::ErrorCode::InvalidDisputeStatus);
+    }
 
     let total_held = ctx
         .accounts
@@ -402,6 +433,15 @@ pub fn handle_resolve_dispute(
         crate::error::ErrorCode::ResolutionAmountMismatch,
     );
 
+    // Everything held is being split here, rent and deposit together.
+    let needs_two = total_held > ctx.accounts.config.two_reviewer_threshold_lamports;
+    let second = second_reviewer_key(
+        &ctx.accounts.config,
+        &reviewer,
+        ctx.accounts.second_reviewer.as_ref(),
+        needs_two,
+    )?;
+
     let rental_info = ctx.accounts.rental.to_account_info();
     let owner_info = ctx.accounts.owner.to_account_info();
     let renter_info = ctx.accounts.renter.to_account_info();
@@ -418,6 +458,15 @@ pub fn handle_resolve_dispute(
 
     ctx.accounts.rental.status = RentalStatus::Resolved;
     ctx.accounts.listing.is_available = true;
+
+    if let Some(mut dispute) = dispute {
+        dispute.status = DisputeStatus::Resolved;
+        dispute.resolved_by = [reviewer, second];
+        dispute.resolved_at = Clock::get()?.unix_timestamp;
+        let mut data = ctx.accounts.dispute.try_borrow_mut_data()?;
+        let mut writer: &mut [u8] = &mut data[..];
+        dispute.try_serialize(&mut writer)?;
+    }
 
     Ok(())
 }

@@ -320,6 +320,8 @@ pub fn resolve_dispute_ix(
             config: config_pda(),
             listing,
             rental,
+            dispute: dispute_pda(&rental),
+            second_reviewer: None,
             admin,
             owner,
             renter,

@@ -962,3 +962,96 @@ fn both_bonds_split_by_outcome_and_the_pool_can_pay_a_user() {
     assert_eq!(lamports(&svm, &user), DEFAULT_BOND_MIN);
     assert_eq!(pool_balance(&svm), pool_before);
 }
+
+// ---------- resolve_dispute for every other dispute kind ----------
+
+/// A rental the renter rejected on arrival (ArrivalIssue), in the same
+/// setup as flagged().
+fn rejected_on_arrival() -> (LiteSVM, Case) {
+    let (mut svm, mut c) = flagged();
+    let listing = list_item(&mut svm, &c.owner, "Fender Strat");
+    let rental = rent(&mut svm, listing, &c.renter);
+    phase1(&mut svm, rental, &c.owner).unwrap();
+    reject_on_arrival(&mut svm, rental, &c.renter).unwrap();
+    c.listing = listing;
+    c.rental = rental;
+    (svm, c)
+}
+
+fn split_ix(c: &Case, signer: Pubkey, second: Option<Pubkey>, owner_amount: u64) -> Instruction {
+    ix(
+        greyswan::instruction::ResolveDispute { owner_amount, renter_amount: TOTAL_HELD - owner_amount },
+        greyswan::accounts::ResolveDispute {
+            config: config_pda(),
+            listing: c.listing,
+            rental: c.rental,
+            dispute: dispute_pda(&c.rental),
+            admin: signer,
+            second_reviewer: second,
+            owner: c.owner.pubkey(),
+            renter: c.renter.pubkey(),
+            system_program: system_program::ID,
+        },
+    )
+}
+
+#[test]
+fn a_reviewer_splits_other_disputes_exactly_with_no_platform_fee() {
+    let (mut svm, c) = rejected_on_arrival();
+    let before = balances(&svm, &c);
+    send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, 1_234_567), &c.reviewer, &[&c.reviewer]).unwrap();
+    assert_eq!(
+        moved(before, balances(&svm, &c)),
+        [1_234_567, (TOTAL_HELD - 1_234_567) as i128, 0, -(TOTAL_HELD as i128)]
+    );
+    let d = dispute(&svm, &c.rental);
+    assert_eq!(d.status, DisputeStatus::Resolved);
+    assert_eq!(d.resolved_by, [c.reviewer.pubkey(), Pubkey::default()]);
+    assert_eq!(rental_state(&svm, &c.rental).status, RentalStatus::Resolved);
+}
+
+#[test]
+fn only_reviewers_can_split_other_disputes() {
+    let (mut svm, c) = rejected_on_arrival();
+    let stranger = funded(&mut svm);
+    for signer in [&c.owner, &c.renter, &c.verdict, &stranger] {
+        let result = send(&mut svm, split_ix(&c, signer.pubkey(), None, 0), signer, &[signer]);
+        assert_program_err(result, ErrorCode::NotReviewer);
+    }
+    assert_eq!(dispute(&svm, &c.rental).status, DisputeStatus::Open);
+}
+
+#[test]
+fn splitting_more_than_the_threshold_needs_two_reviewers() {
+    let (mut svm, c) = rejected_on_arrival();
+    configure(&mut svm, &c.admin, ConfigUpdate { two_reviewer_threshold_lamports: Some(TOTAL_HELD - 1), ..Default::default() });
+    let alone = send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, 0), &c.reviewer, &[&c.reviewer]);
+    assert_program_err(alone, ErrorCode::SecondReviewerRequired);
+    let stranger = funded(&mut svm);
+    let with_stranger = split_ix(&c, c.reviewer.pubkey(), Some(stranger.pubkey()), 0);
+    assert_program_err(send(&mut svm, with_stranger, &c.reviewer, &[&c.reviewer, &stranger]), ErrorCode::SecondReviewerRequired);
+    let pair = split_ix(&c, c.reviewer.pubkey(), Some(c.reviewer2.pubkey()), 0);
+    send(&mut svm, pair, &c.reviewer, &[&c.reviewer, &c.reviewer2]).unwrap();
+    assert_eq!(dispute(&svm, &c.rental).resolved_by, [c.reviewer.pubkey(), c.reviewer2.pubkey()]);
+
+    // Exactly at the threshold, one is enough.
+    let (mut svm, c) = rejected_on_arrival();
+    configure(&mut svm, &c.admin, ConfigUpdate { two_reviewer_threshold_lamports: Some(TOTAL_HELD), ..Default::default() });
+    send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, 0), &c.reviewer, &[&c.reviewer]).unwrap();
+}
+
+#[test]
+fn split_refused_for_damage_disputes_at_every_stage() {
+    // Open, verdict posted, appealed and voided all belong to the engine.
+    let (mut svm, c) = flagged();
+    let try_split = |svm: &mut LiteSVM, c: &Case| {
+        send(svm, split_ix(c, c.admin.pubkey(), None, TOTAL_HELD), &c.admin, &[&c.admin])
+    };
+    assert_program_err(try_split(&mut svm, &c), ErrorCode::WrongDisputeKind);
+    post(&mut svm, c.rental, &c.verdict, &[1]).unwrap();
+    assert_program_err(try_split(&mut svm, &c), ErrorCode::WrongDisputeKind);
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+    assert_program_err(try_split(&mut svm, &c), ErrorCode::WrongDisputeKind);
+    // The renter's bond is still safely held.
+    assert_eq!(dispute(&svm, &c.rental).renter_bond, DEFAULT_BOND_MIN);
+}

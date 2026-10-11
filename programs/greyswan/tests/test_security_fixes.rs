@@ -187,6 +187,8 @@ fn resolve_dispute_rejects_unrelated_listing() {
                 config: config_pda(),
                 listing: t.listing_b,
                 rental: t.rental_a,
+                dispute: common::dispute_pda(&t.rental_a),
+                second_reviewer: None,
                 admin: t.admin.pubkey(),
                 owner: t.owner_a.pubkey(),
                 renter: t.renter_a.pubkey(),
