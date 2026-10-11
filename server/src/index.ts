@@ -12,10 +12,11 @@ import { type DeliveryMethod, getDeliveryMethod, upsertDeliveryMethod } from './
 import { type DisputeReviewStatus, listDisputeNotes, upsertDisputeNote } from './disputes.js'
 import { getAllListingAreas, getListingArea, upsertListingArea } from './listingAreas.js'
 import { countUnread, getLastMessage, insertMessage, listMessages, markReadExceptSender, MESSAGE_MAX_LEN } from './messages.js'
+import { getAnswers, insertAnswers, validateOwnerAnswers, validateRenterAnswers } from './disputeAnswers.js'
 import { getPhaseCode, issuePhaseCode } from './phaseCodes.js'
 import { getProfile, upsertProfile } from './profiles.js'
-import { requireRentalParty } from './rentalAuth.js'
-import { fetchRentalSummary } from './rentalChain.js'
+import { requireRentalParty, requireRentalPartyOrReviewer } from './rentalAuth.js'
+import { fetchRentalSummary, RENTAL_STATUS_DISPUTED } from './rentalChain.js'
 
 // This server exists for one reason: the Pinata JWT must never reach the
 // browser. If it were embedded in the frontend bundle, anyone could open
@@ -299,7 +300,11 @@ app.post('/api/delivery', requireAuth, (req, res) => {
 // owner, 2 and 3 to the renter. Either party can read a code that already
 // exists, but a code is only ever issued to the acting party, and only while
 // that phase is the next one on-chain, so it can't be minted early.
-const PHASE_ACTOR: Record<number, 'owner' | 'renter'> = { 1: 'owner', 2: 'renter', 3: 'renter', 4: 'owner' }
+// Phase 5 is the owner's close-up photos for a damage dispute. It opens once
+// all four handovers are done, so the owner can take the photos before signing
+// the flag, and stays open while the rental is disputed.
+const PHASE_ACTOR: Record<number, 'owner' | 'renter'> = { 1: 'owner', 2: 'renter', 3: 'renter', 4: 'owner', 5: 'owner' }
+const DISPUTE_PHOTOS_PHASE = 5
 
 app.get('/api/phase-code/:rentalPubkey/:phase', requireAuth, requireRentalParty, (req, res) => {
   const rentalPubkey = req.params.rentalPubkey as string
@@ -321,11 +326,42 @@ app.get('/api/phase-code/:rentalPubkey/:phase', requireAuth, requireRentalParty,
     res.status(404).json({ error: 'No code has been issued for this step yet.' })
     return
   }
-  if (rental.currentPhase !== phase - 1) {
+  const open =
+    phase === DISPUTE_PHOTOS_PHASE
+      ? rental.currentPhase === 4 && rental.status <= RENTAL_STATUS_DISPUTED && !rental.isCompleted
+      : rental.currentPhase === phase - 1
+  if (!open) {
     res.status(409).json({ error: "This step isn't open yet." })
     return
   }
   res.json({ code: issuePhaseCode(rentalPubkey, phase, actor) })
+})
+
+// Damage-dispute answers (see disputeAnswers.ts). The two parties and the
+// reviewers on Config can read them; only a party can write their own, once,
+// and only while the rental is disputed.
+app.get('/api/dispute-answers/:rentalPubkey', requireAuth, requireRentalPartyOrReviewer, (req, res) => {
+  res.json(getAnswers(req.params.rentalPubkey as string))
+})
+
+app.post('/api/dispute-answers/:rentalPubkey', requireAuth, requireRentalParty, (req, res) => {
+  const rentalPubkey = req.params.rentalPubkey as string
+  const rental = req.rental!
+  if (rental.status !== RENTAL_STATUS_DISPUTED) {
+    res.status(409).json({ error: "This rental isn't in review." })
+    return
+  }
+  const party = req.authPubkey === rental.owner ? 'owner' : 'renter'
+  const answers = party === 'owner' ? validateOwnerAnswers(req.body) : validateRenterAnswers(req.body)
+  if (!answers) {
+    res.status(400).json({ error: 'Some answers are missing or too long.' })
+    return
+  }
+  if (!insertAnswers(rentalPubkey, party, answers)) {
+    res.status(409).json({ error: "You've already answered. Your first answers stand." })
+    return
+  }
+  res.json(getAnswers(rentalPubkey))
 })
 
 // Listing areas: a coarse, public location (city, neighborhood, or
