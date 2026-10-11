@@ -5,12 +5,13 @@ import { Link, useParams } from 'react-router-dom'
 import { Btn, TrustNote } from '../components/atoms'
 import { IconAlert, IconCheck } from '../components/icons'
 import { MessagesEntryRow } from '../components/MessagesEntryRow'
-import { PhotoManifestField } from '../components/PhotoManifestField'
+import { HandoverCapture } from '../components/HandoverCapture'
 import { RetryImage } from '../components/RetryImage'
 import { fetchAddress, saveAddress } from '../lib/addressApi'
 import { useAuthContext } from '../lib/AuthContext'
 import { type DeliveryMethod, fetchDeliveryMethod } from '../lib/deliveryApi'
 import { formatSol } from '../lib/format'
+import { shotLabel } from '../lib/handoverShots'
 import { enumKey } from '../lib/listing'
 import { confirmReturn, flagReturnIssue, rejectOnArrival, submitPhase1, submitPhase2, submitPhase3, submitPhase4 } from '../lib/mutations'
 import { useProgram } from '../lib/program'
@@ -309,6 +310,15 @@ export function RentalHandover() {
     }
   }
 
+  // Guided camera step for one phase. Waits for the delivery method because
+  // it decides whether a parcel shot is part of the list.
+  const renderCapture = (phase: 1 | 2 | 3 | 4, key: string) =>
+    token && deliveryMethod ? (
+      <HandoverCapture key={key} rentalPubkey={pubkey} phase={phase} hasParcel={deliveryMethod !== 'pickup'} token={token} onChange={setPhotos} />
+    ) : (
+      <WaitingNote text="Loading…" />
+    )
+
   if (statusKey === 'disputed') {
     return (
       <div className="mx-auto max-w-xl px-4 py-20 text-center sm:px-6">
@@ -435,20 +445,20 @@ export function RentalHandover() {
                 tint="gold"
                 role="Owner · Before handover"
                 title="Show the item before handover"
-                body="Add up to 5 clear photos showing its current condition."
+                body="Take a photo of each side of the item with your camera, following the steps below."
               />
             ) : (
               <StepHeader
                 tint="gold"
                 role="Owner · Before sending"
                 title="Show the item before it's sent"
-                body="Add up to 5 clear photos showing its current condition, including one clear photo of the shipping label with the tracking number visible."
+                body="Take a photo of each side of the item with your camera, then one of the packed parcel with the shipping label visible."
               />
             )}
             {isOwner ? (
               deliveryMethod === 'pickup' ? (
                 <>
-                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  {renderCapture(1, 'p1-pickup')}
                   <TrustNote />
                   <Btn full disabled={busy || !photos} onClick={() => runMutation(() => submitPhase1(program, rentalPubkey, rental.owner, photos, PICKUP_HANDOVER_NOTE))}>
                     {busy ? 'Submitting…' : 'Handed over in person'}
@@ -457,7 +467,7 @@ export function RentalHandover() {
               ) : (
                 <>
                   <AddressPanel loading={addressLoading} address={counterpartyAddress} label="Send the item to" />
-                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  {renderCapture(1, 'p1-ship')}
                   <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
                     <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Tracking number</label>
                     <input type="text" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Enter tracking number" maxLength={40} style={INPUT_STYLE} />
@@ -504,11 +514,11 @@ export function RentalHandover() {
 
         {!allPhasesDone && step === 2 && (
           <div className="flex flex-col gap-6">
-            <StepHeader tint="rust" role="Renter · On arrival" title="Show us what arrived" body="Add up to 5 clear photos of the item as you received it." />
+            <StepHeader tint="rust" role="Renter · On arrival" title="Show us what arrived" body="Take a photo of the unopened parcel, then each side of the item as you received it." />
             {isRenter ? (
               showRejectForm ? (
                 <>
-                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  {renderCapture(2, 'p2-reject')}
                   <div>
                     <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>What's wrong?</label>
                     <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} style={{ ...INPUT_STYLE, resize: 'none' }} />
@@ -520,7 +530,7 @@ export function RentalHandover() {
                 </>
               ) : (
                 <>
-                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  {renderCapture(2, 'p2-confirm')}
                   <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
                     <h3 className="mb-1 font-semibold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>Everything arrived as expected</h3>
                     <p className="mb-4 text-sm" style={{ color: C.muted }}>Confirm once you've received the item and had a chance to check it.</p>
@@ -547,20 +557,20 @@ export function RentalHandover() {
                 tint="gold"
                 role="Renter · Before returning"
                 title="Show the item before you hand it back"
-                body="Add up to 5 clear photos showing its condition before you return it."
+                body="Take a photo of each side of the item with your camera, following the steps below."
               />
             ) : (
               <StepHeader
                 tint="gold"
                 role="Renter · Before returning"
                 title="Show the item before you send it back"
-                body="Add up to 5 clear photos showing its condition before return, including one clear photo of the shipping label with the tracking number visible."
+                body="Take a photo of each side of the item with your camera, then one of the packed parcel with the shipping label visible."
               />
             )}
             {isRenter ? (
               deliveryMethod === 'pickup' ? (
                 <>
-                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  {renderCapture(3, 'p3-pickup')}
                   <TrustNote />
                   <Btn full disabled={busy || !photos} onClick={() => runMutation(() => submitPhase3(program, rentalPubkey, rental.renter, photos, PICKUP_HANDOVER_NOTE))}>
                     {busy ? 'Submitting…' : 'Handed over in person'}
@@ -569,7 +579,7 @@ export function RentalHandover() {
               ) : (
                 <>
                   <AddressPanel loading={addressLoading} address={counterpartyAddress} label="Send it back to" />
-                  <PhotoManifestField value={photos} onChange={setPhotos} />
+                  {renderCapture(3, 'p3-ship')}
                   <div className="pt-6" style={{ borderTop: `1px solid ${C.border}` }}>
                     <label className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>Return tracking number</label>
                     <input type="text" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Enter tracking number" maxLength={40} style={INPUT_STYLE} />
@@ -588,10 +598,10 @@ export function RentalHandover() {
 
         {!allPhasesDone && step === 4 && (
           <div className="flex flex-col gap-6">
-            <StepHeader tint="green" role="Owner · On return" title="Check the item after its return" body="Add up to 5 clear photos showing the condition it arrived back in." />
+            <StepHeader tint="green" role="Owner · On return" title="Check the item after its return" body="Take a photo of the unopened parcel, then each side of the item as it came back." />
             {isOwner ? (
               <>
-                <PhotoManifestField value={photos} onChange={setPhotos} />
+                {renderCapture(4, 'p4')}
                 <TrustNote />
                 <Btn full disabled={busy || !photos} onClick={() => runMutation(() => submitPhase4(program, rentalPubkey, rental.owner, photos))}>
                   {busy ? 'Submitting…' : 'Continue'}
@@ -691,7 +701,7 @@ function WaitingNote({ text }: { text: string }) {
 }
 
 function PhaseRecap({ title, tracking, manifestCid }: { title: string; tracking?: string; manifestCid: string }) {
-  const { urls, loading, error, retry } = usePhotoUrls(manifestCid || undefined)
+  const { urls, shots, phaseCode, loading, error, retry } = usePhotoUrls(manifestCid || undefined)
   if (!manifestCid) return null
   return (
     <div>
@@ -701,6 +711,11 @@ function PhaseRecap({ title, tracking, manifestCid }: { title: string; tracking?
       {tracking && (
         <p className="mb-2 text-xs" style={{ color: C.muted }}>
           {tracking === PICKUP_HANDOVER_NOTE ? tracking : `Tracking: ${tracking}`}
+        </p>
+      )}
+      {phaseCode && (
+        <p className="mb-2 text-xs" style={{ color: C.muted }}>
+          Photo code: {phaseCode}
         </p>
       )}
       {loading ? (
@@ -718,11 +733,22 @@ function PhaseRecap({ title, tracking, manifestCid }: { title: string; tracking?
         </div>
       ) : (
         <div className="grid grid-cols-4 gap-2">
-          {urls.map((url, i) => (
-            <div key={i} className="aspect-square overflow-hidden rounded-lg" style={{ border: `1px solid ${C.border}` }}>
-              <RetryImage src={url} alt={`${title}, photo ${i + 1}`} className="h-full w-full object-cover" />
-            </div>
-          ))}
+          {urls.map((url, i) => {
+            const shot = shots[i]
+            return (
+              <div key={i}>
+                <div className="aspect-square overflow-hidden rounded-lg" style={{ border: `1px solid ${C.border}` }}>
+                  <RetryImage src={url} alt={`${title}, ${shot ? shotLabel(shot.shot) : `photo ${i + 1}`}`} className="h-full w-full object-cover" />
+                </div>
+                {shot && (
+                  <p className="mt-1 text-xs" style={{ color: shot.capture === 'uploaded' ? C.rust : C.faint }}>
+                    {shotLabel(shot.shot)}
+                    {shot.capture === 'uploaded' ? ', uploaded, not captured' : ''}
+                  </p>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
