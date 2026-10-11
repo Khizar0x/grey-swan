@@ -92,4 +92,6 @@ pub enum ErrorCode {
     ReturnWindowStillOpen,
     #[msg("This rental has no recorded dates for this step")]
     RentalTimesNotRecorded,
+    #[msg("The owner still has time to check the returned item")]
+    InspectionWindowStillOpen,
 }

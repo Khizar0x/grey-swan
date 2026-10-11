@@ -214,3 +214,245 @@ fn not_returned_unavailable_for_legacy_rental_without_timeline() {
     // anchor_lang AccountNotInitialized
     assert!(err.contains("Custom(3012)"), "{err}");
 }
+
+// ---------- complete_after_inspection_deadline ----------
+
+const INSPECTION: i64 = 7 * DAY;
+
+fn complete_ix(listing: Pubkey, rental: Pubkey, owner: Pubkey, renter: Pubkey, platform_wallet: Pubkey) -> Instruction {
+    ix(
+        greyswan::instruction::CompleteAfterInspectionDeadline {},
+        greyswan::accounts::CompleteAfterInspectionDeadline {
+            listing,
+            rental,
+            timeline: timeline_pda(&rental),
+            owner,
+            renter,
+            platform_wallet,
+            system_program: system_program::ID,
+        },
+    )
+}
+
+fn complete(svm: &mut LiteSVM, listing: Pubkey, rental: Pubkey, owner: &Keypair, signer: &Keypair) -> Result<(), String> {
+    send(
+        svm,
+        complete_ix(listing, rental, owner.pubkey(), signer.pubkey(), greyswan::PLATFORM_WALLET),
+        signer,
+        &[signer],
+    )
+}
+
+fn confirm_return_ix(listing: Pubkey, rental: Pubkey, owner: Pubkey, renter: Pubkey) -> Instruction {
+    ix(
+        greyswan::instruction::ConfirmReturn {},
+        greyswan::accounts::ConfirmReturn {
+            listing,
+            rental,
+            owner,
+            renter,
+            platform_wallet: greyswan::PLATFORM_WALLET,
+            system_program: system_program::ID,
+        },
+    )
+}
+
+/// An arrived() rental the renter sent back at START_TIME, so its
+/// inspection deadline is START_TIME + 7 days.
+fn sent_back() -> Rented {
+    let mut r = arrived();
+    phase3(&mut r.svm, r.rental, &r.renter).unwrap();
+    r
+}
+
+#[test]
+fn completes_after_the_inspection_deadline() {
+    let Rented { mut svm, owner, renter, listing, rental, .. } = sent_back();
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    complete(&mut svm, listing, rental, &owner, &renter).unwrap();
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Completed);
+    assert!(read::<Listing>(&svm, &listing).is_available);
+}
+
+#[test]
+fn completes_when_owner_logged_the_return_but_went_silent() {
+    let Rented { mut svm, owner, renter, listing, rental, .. } = sent_back();
+    phase4(&mut svm, rental, &owner).unwrap();
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    complete(&mut svm, listing, rental, &owner, &renter).unwrap();
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Completed);
+}
+
+#[test]
+fn completion_rejected_before_and_at_the_inspection_deadline() {
+    let Rented { mut svm, owner, renter, listing, rental, .. } = sent_back();
+    set_time(&mut svm, START_TIME + INSPECTION - 1);
+    assert_program_err(complete(&mut svm, listing, rental, &owner, &renter), ErrorCode::InspectionWindowStillOpen);
+    // At the deadline itself the owner still has time.
+    set_time(&mut svm, START_TIME + INSPECTION);
+    assert_program_err(complete(&mut svm, listing, rental, &owner, &renter), ErrorCode::InspectionWindowStillOpen);
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Active);
+}
+
+#[test]
+fn completion_rejected_for_anyone_but_the_renter() {
+    let Rented { mut svm, owner, listing, rental, .. } = sent_back();
+    let stranger = funded(&mut svm);
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    assert_program_err(complete(&mut svm, listing, rental, &owner, &owner), ErrorCode::NotRenterForPhase);
+    assert_program_err(complete(&mut svm, listing, rental, &owner, &stranger), ErrorCode::NotRenterForPhase);
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Active);
+}
+
+#[test]
+fn completion_rejected_before_the_item_is_sent_back() {
+    let Rented { mut svm, owner, renter, listing, rental, .. } = arrived();
+    set_time(&mut svm, START_TIME + 365 * DAY);
+    // Phase 3 not done, so there is no inspection to have missed.
+    assert_program_err(complete(&mut svm, listing, rental, &owner, &renter), ErrorCode::PhaseOutOfOrder);
+}
+
+#[test]
+fn completion_rejected_after_owner_flags_a_problem() {
+    let Rented { mut svm, owner, renter, listing, rental, .. } = sent_back();
+    phase4(&mut svm, rental, &owner).unwrap();
+    flag_return_issue(&mut svm, rental, &owner).unwrap();
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    assert_program_err(complete(&mut svm, listing, rental, &owner, &renter), ErrorCode::InvalidRentalStatus);
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Disputed);
+}
+
+#[test]
+fn completion_rejected_after_owner_confirms_and_cannot_pay_twice() {
+    let Rented { mut svm, owner, renter, listing, rental, .. } = sent_back();
+    phase4(&mut svm, rental, &owner).unwrap();
+    send(&mut svm, confirm_return_ix(listing, rental, owner.pubkey(), renter.pubkey()), &owner, &[&owner])
+        .unwrap();
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    assert_program_err(complete(&mut svm, listing, rental, &owner, &renter), ErrorCode::InvalidRentalStatus);
+
+    // And a timed-out completion can't be repeated either.
+    let Rented { mut svm, owner, renter, listing, rental, .. } = sent_back();
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    complete(&mut svm, listing, rental, &owner, &renter).unwrap();
+    assert_program_err(complete(&mut svm, listing, rental, &owner, &renter), ErrorCode::InvalidRentalStatus);
+}
+
+#[test]
+fn completion_rejects_substituted_accounts() {
+    let Rented { mut svm, owner, renter, listing, rental, .. } = sent_back();
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+    let other_listing = list_item(&mut svm, &owner, "Fender Strat");
+    let stranger = funded(&mut svm);
+    let renter_key = renter.pubkey();
+
+    let wrong_listing = complete_ix(other_listing, rental, owner.pubkey(), renter_key, greyswan::PLATFORM_WALLET);
+    assert_program_err(send(&mut svm, wrong_listing, &renter, &[&renter]), ErrorCode::ListingMismatch);
+
+    let wrong_owner = complete_ix(listing, rental, stranger.pubkey(), renter_key, greyswan::PLATFORM_WALLET);
+    assert_program_err(send(&mut svm, wrong_owner, &renter, &[&renter]), ErrorCode::NotListingOwner);
+
+    let wrong_platform = complete_ix(listing, rental, owner.pubkey(), renter_key, stranger.pubkey());
+    let err = send(&mut svm, wrong_platform, &renter, &[&renter]).unwrap_err();
+    // anchor_lang ConstraintAddress
+    assert!(err.contains("Custom(2012)"), "{err}");
+
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Active);
+}
+
+#[test]
+fn completion_pays_out_exactly_like_confirm_return() {
+    // Two identical rentals of the same owner's items by the same renter:
+    // one confirmed by the owner, one completed by the renter after the
+    // inspection deadline. A separate fee payer keeps fees out of the sums.
+    let mut svm = setup();
+    init_test_config(&mut svm);
+    let (owner, renter, fee_payer) = (funded(&mut svm), funded(&mut svm), funded(&mut svm));
+    let listing_a = list_item(&mut svm, &owner, "Canon R5");
+    let listing_b = list_item(&mut svm, &owner, "Canon R6");
+    let rental_a = rent(&mut svm, listing_a, &renter);
+    let rental_b = rent(&mut svm, listing_b, &renter);
+    all_phases(&mut svm, rental_a, &owner, &renter);
+    all_phases(&mut svm, rental_b, &owner, &renter);
+    set_time(&mut svm, START_TIME + INSPECTION + 1);
+
+    let balances = |svm: &LiteSVM, rental: &Pubkey| {
+        [
+            lamports(svm, &owner.pubkey()),
+            lamports(svm, &renter.pubkey()),
+            lamports(svm, &greyswan::PLATFORM_WALLET),
+            lamports(svm, rental),
+        ]
+    };
+    let delta = |before: [u64; 4], after: [u64; 4]| -> [i128; 4] {
+        std::array::from_fn(|i| after[i] as i128 - before[i] as i128)
+    };
+
+    let before = balances(&svm, &rental_a);
+    send(
+        &mut svm,
+        confirm_return_ix(listing_a, rental_a, owner.pubkey(), renter.pubkey()),
+        &fee_payer,
+        &[&fee_payer, &owner],
+    )
+    .unwrap();
+    let confirmed = delta(before, balances(&svm, &rental_a));
+
+    let before = balances(&svm, &rental_b);
+    send(
+        &mut svm,
+        complete_ix(listing_b, rental_b, owner.pubkey(), renter.pubkey(), greyswan::PLATFORM_WALLET),
+        &fee_payer,
+        &[&fee_payer, &renter],
+    )
+    .unwrap();
+    let timed_out = delta(before, balances(&svm, &rental_b));
+
+    assert_eq!(confirmed, timed_out);
+    let rental_fee = (WEEKLY_PRICE * WEEKS as u64) as i128;
+    let platform_fee = rental_fee / 10;
+    assert_eq!(timed_out, [rental_fee - platform_fee, DEPOSIT as i128, platform_fee, -(TOTAL_HELD as i128)]);
+
+    for (rental, listing) in [(rental_a, listing_a), (rental_b, listing_b)] {
+        assert_eq!(state(&svm, &rental).status, RentalStatus::Completed);
+        assert!(read::<Listing>(&svm, &listing).is_available);
+    }
+}
+
+#[test]
+fn completion_unavailable_for_legacy_rental_without_timeline() {
+    let (mut svm, rental, renter) = legacy_shipped_rental();
+    let s = state(&svm, &rental);
+    stand_in_listing(&mut svm, &s);
+    send_as(
+        &mut svm,
+        ix(
+            greyswan::instruction::SubmitPhase2 { photos: "ipfs://QmPhase2".to_string() },
+            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), renter },
+        ),
+        renter,
+    )
+    .unwrap();
+    phase3_as(&mut svm, rental, renter);
+    warp(&mut svm, 365 * DAY);
+    let err = send_as(&mut svm, complete_ix(s.listing, rental, s.owner, renter, greyswan::PLATFORM_WALLET), renter)
+        .unwrap_err();
+    // anchor_lang AccountNotInitialized: the listing is there (a stand-in),
+    // so it's the missing timeline that stops it.
+    assert!(err.contains("Custom(3012)"), "{err}");
+}
+
+fn phase3_as(svm: &mut LiteSVM, rental: Pubkey, renter: Pubkey) {
+    send_as(
+        svm,
+        ix(
+            greyswan::instruction::SubmitPhase3 {
+                photos: "ipfs://QmPhase3".to_string(),
+                tracking_number: "RM987654321GB".to_string(),
+            },
+            greyswan::accounts::SubmitPhase3 { rental, timeline: timeline_pda(&rental), config: config_pda(), renter },
+        ),
+        renter,
+    )
+    .unwrap();
+}

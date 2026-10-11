@@ -350,6 +350,43 @@ pub fn legacy_shipped_rental() -> (LiteSVM, Pubkey, Pubkey) {
     (svm, rental, state.renter)
 }
 
+/// The legacy shipped rental's listing (GBorwimA4Zyx...) was never dumped
+/// from devnet, so this writes a stand-in Listing at that address, owned by
+/// the program, with the rental's owner and prices and is_available false.
+/// Enough for instructions that take the listing (resolve_dispute,
+/// complete_after_inspection_deadline); the rental itself is the real bytes.
+pub fn stand_in_listing(svm: &mut LiteSVM, rental: &greyswan::state::Rental) {
+    use {anchor_lang::{AccountSerialize, Space}, greyswan::state::*};
+    let listing = Listing {
+        owner: rental.owner,
+        item_name: "Legacy item".to_string(),
+        description: String::new(),
+        photos: String::new(),
+        rental_price: rental.weekly_price,
+        deposit_amount: rental.deposit_amount,
+        estimated_value: 0,
+        category: Category::Other,
+        rarity_tier: RarityTier::Common,
+        is_available: false,
+        bump: 255,
+    };
+    let mut data = Vec::new();
+    listing.try_serialize(&mut data).unwrap();
+    data.resize(8 + Listing::INIT_SPACE, 0);
+    let rent = svm.get_sysvar::<anchor_lang::solana_program::rent::Rent>();
+    svm.set_account(
+        rental.listing,
+        solana_account::Account {
+            lamports: rent.minimum_balance(data.len()),
+            data,
+            owner: greyswan::id(),
+            executable: false,
+            rent_epoch: u64::MAX,
+        },
+    )
+    .unwrap();
+}
+
 /// Loads an account dumped with `solana account <address> --output json`
 /// and returns its address.
 pub fn load_fixture(svm: &mut LiteSVM, json: &str) -> Pubkey {

@@ -115,6 +115,12 @@ pub mod greyswan {
         crate::instructions::confirm_return::handle_confirm_return(ctx)
     }
 
+    pub fn complete_after_inspection_deadline(
+        ctx: Context<CompleteAfterInspectionDeadline>,
+    ) -> Result<()> {
+        crate::instructions::confirm_return::handle_complete_after_inspection_deadline(ctx)
+    }
+
     pub fn claim_refund(ctx: Context<ClaimRefund>) -> Result<()> {
         crate::instructions::claim_refund::handle_claim_refund(ctx)
     }
