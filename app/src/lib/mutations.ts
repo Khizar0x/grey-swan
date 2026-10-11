@@ -187,3 +187,138 @@ export async function resolveDispute(
     })
     .rpc()
 }
+
+// ---------- Deadlines and timeouts ----------
+// Each of these only succeeds once the program's own clock check passes (see
+// handover.rs and dispute.rs); the rental page only offers a button once the
+// matching deadline has passed, but the program is the one that enforces it.
+
+// Owner: the renter missed the arrival deadline, so the owner confirms the
+// item arrived for them. Also sends `timeline` and `config`, derived by
+// Anchor.
+export async function confirmArrivalAfterDeadline(program: Program<Greyswan>, rental: PublicKey, owner: PublicKey) {
+  return program.methods.confirmArrivalAfterDeadline().accounts({ rental, owner }).rpc()
+}
+
+// Owner: the renter still has the item after the return date plus grace.
+// Freezes the funds for a reviewer. Also sends `timeline` and `dispute`.
+export async function flagNotReturned(program: Program<Greyswan>, rental: PublicKey, owner: PublicKey) {
+  return program.methods.flagNotReturned().accounts({ rental, owner }).rpc()
+}
+
+// Owner: the renter says they sent it back but it never reached the owner.
+// Only allowed up to the inspection deadline. Also sends `timeline` and
+// `dispute`.
+export async function flagReturnNotReceived(program: Program<Greyswan>, rental: PublicKey, owner: PublicKey) {
+  return program.methods.flagReturnNotReceived().accounts({ rental, owner }).rpc()
+}
+
+// Renter: the owner let the inspection deadline pass without confirming or
+// flagging, so the rental completes as if confirmed. The renter signs; the
+// owner is paid out, so it is passed as a plain account.
+export async function completeAfterInspectionDeadline(
+  program: Program<Greyswan>,
+  listing: PublicKey,
+  rental: PublicKey,
+  owner: PublicKey,
+  renter: PublicKey,
+) {
+  return program.methods.completeAfterInspectionDeadline().accounts({ listing, rental, owner, renter }).rpc()
+}
+
+// ---------- Verdict, appeal and payout ----------
+
+// Either party appeals an AI verdict. The bond is moved into the dispute
+// account by the program, so the page shows the exact amount (appealBond in
+// disputeMath.ts) before this is called. Also sends `config`, `dispute` and
+// `system_program`.
+export async function appeal(program: Program<Greyswan>, rental: PublicKey, appellant: PublicKey) {
+  return program.methods.appeal().accounts({ rental, appellant }).rpc()
+}
+
+// Anyone can release an unappealed verdict once the appeal window has closed.
+// The caller only pays the network fee; the money can only go to the rental's
+// recorded owner, renter and the platform wallet.
+export async function finalizeVerdict(
+  program: Program<Greyswan>,
+  listing: PublicKey,
+  rental: PublicKey,
+  owner: PublicKey,
+  renter: PublicKey,
+  caller: PublicKey,
+) {
+  return program.methods.finalizeVerdict().accounts({ listing, rental, owner, renter, caller }).rpc()
+}
+
+// Anyone can settle an appeal that no reviewer got to in time: the verdict
+// stands and every bond goes back.
+export async function expireAppeal(
+  program: Program<Greyswan>,
+  listing: PublicKey,
+  rental: PublicKey,
+  owner: PublicKey,
+  renter: PublicKey,
+  caller: PublicKey,
+) {
+  return program.methods.expireAppeal().accounts({ listing, rental, owner, renter, caller }).rpc()
+}
+
+// ---------- Reviewer and admin ----------
+
+// Reviewer decides a damage dispute with a deposit split, in basis points to
+// the owner (0 to 10000). When the program wants a second reviewer, build the
+// transaction with `reviewerResolveTx` and use the two-signature flow in
+// twoReviewer.ts instead: one wallet can't sign for both.
+export async function reviewerResolve(
+  program: Program<Greyswan>,
+  listing: PublicKey,
+  rental: PublicKey,
+  owner: PublicKey,
+  renter: PublicKey,
+  reviewer: PublicKey,
+  ownerBps: number,
+) {
+  return program.methods
+    .reviewerResolve(ownerBps)
+    .accounts({ listing, rental, owner, renter, reviewer })
+    .rpc()
+}
+
+export async function reviewerResolveTx(
+  program: Program<Greyswan>,
+  listing: PublicKey,
+  rental: PublicKey,
+  owner: PublicKey,
+  renter: PublicKey,
+  reviewer: PublicKey,
+  secondReviewer: PublicKey,
+  ownerBps: number,
+) {
+  return program.methods.reviewerResolve(ownerBps).accounts({ listing, rental, owner, renter, reviewer, secondReviewer }).transaction()
+}
+
+// The same two-signature variant for the older resolve_dispute (named
+// `admin` in the IDL, but any reviewer may sign it). The first reviewer is
+// the connected wallet, which Anchor fills in for the `admin` signer.
+export async function resolveDisputeTx(
+  program: Program<Greyswan>,
+  listing: PublicKey,
+  rental: PublicKey,
+  secondReviewer: PublicKey,
+  owner: PublicKey,
+  renter: PublicKey,
+  ownerAmount: BN,
+  renterAmount: BN,
+) {
+  return program.methods
+    .resolveDispute(ownerAmount, renterAmount)
+    .accounts({ listing, rental, secondReviewer, owner, renter })
+    .transaction()
+}
+
+// Admin only: sets an unappealed AI verdict aside so a reviewer decides
+// instead. Any bonds held come back to the parties. The admin signer is the
+// connected wallet, which Anchor fills in.
+export async function voidVerdict(program: Program<Greyswan>, rental: PublicKey, owner: PublicKey, renter: PublicKey) {
+  return program.methods.voidVerdict().accounts({ rental, owner, renter }).rpc()
+}
