@@ -138,7 +138,7 @@ pub fn handle_reject_on_arrival(
 // ---------- Owner flags that the item hasn't come back ----------
 
 // The renter has the item and hasn't sent it back (no phase 3) by the
-// return date plus a grace period. Funds freeze and a reviewer decides,
+// return date plus a grace period (both fixed at arrival). Funds freeze and a reviewer decides,
 // with resolve_dispute, how much of the deposit goes to the owner.
 
 #[derive(Accounts)]
@@ -150,9 +150,6 @@ pub struct FlagNotReturned<'info> {
     // so it has no return date) fails here. Its exit is admin_open_dispute.
     #[account(seeds = [TIMELINE_SEED, rental.key().as_ref()], bump = timeline.bump)]
     pub timeline: Account<'info, RentalTimeline>,
-
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, Config>,
 
     #[account(
         init,
@@ -185,15 +182,12 @@ pub fn handle_flag_not_returned(ctx: Context<FlagNotReturned>) -> Result<()> {
         ctx.accounts.rental.current_phase == HandoverPhase::OnArrival,
         crate::error::ErrorCode::PhaseOutOfOrder,
     );
-    let return_due_at = ctx.accounts.timeline.return_due_at;
-    require!(return_due_at != 0, crate::error::ErrorCode::RentalTimesNotRecorded);
-
-    // Grace is read from Config now, not stored per rental.
-    let overdue_at = return_due_at
-        .checked_add(ctx.accounts.config.not_returned_grace_secs)
-        .ok_or(crate::error::ErrorCode::MathOverflow)?;
+    // Fixed at arrival (return date + grace), so Config changes since then
+    // don't move it.
+    let not_returned_after = ctx.accounts.timeline.not_returned_after;
+    require!(not_returned_after != 0, crate::error::ErrorCode::RentalTimesNotRecorded);
     let now = Clock::get()?.unix_timestamp;
-    require!(now > overdue_at, crate::error::ErrorCode::ReturnWindowStillOpen);
+    require!(now > not_returned_after, crate::error::ErrorCode::ReturnWindowStillOpen);
 
     let rental = &mut ctx.accounts.rental;
     rental.status = RentalStatus::Disputed;

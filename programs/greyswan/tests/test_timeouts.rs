@@ -13,6 +13,7 @@ use {
     common::*,
     greyswan::{
         error::ErrorCode,
+        instructions::ConfigUpdate,
         state::{Dispute, DisputeKind, DisputeStatus, HandoverPhase, Listing, Rental, RentalStatus},
     },
     litesvm::LiteSVM,
@@ -62,7 +63,6 @@ fn flag_not_returned_ix(rental: Pubkey, owner: Pubkey) -> Instruction {
         greyswan::accounts::FlagNotReturned {
             rental,
             timeline: timeline_pda(&rental),
-            config: config_pda(),
             dispute: dispute_pda(&rental),
             owner,
             system_program: system_program::ID,
@@ -193,6 +193,51 @@ fn not_returned_counts_from_forced_arrival_at_the_missed_deadline() {
     assert_eq!(state(&svm, &rental).dispute_kind, DisputeKind::NotReturned);
 }
 
+fn set_grace(svm: &mut LiteSVM, admin: &Keypair, seconds: i64) {
+    send(
+        svm,
+        ix(
+            greyswan::instruction::UpdateConfig {
+                update: ConfigUpdate { not_returned_grace_secs: Some(seconds), ..Default::default() },
+            },
+            greyswan::accounts::UpdateConfig { config: config_pda(), admin: admin.pubkey() },
+        ),
+        admin,
+        &[admin],
+    )
+    .unwrap();
+}
+
+#[test]
+fn grace_change_after_arrival_does_not_move_the_not_returned_date() {
+    let Rented { mut svm, admin, owner, rental, .. } = arrived();
+    // Received under the 3-day grace; the admin then lengthens it to 10.
+    set_grace(&mut svm, &admin, 10 * DAY);
+    set_time(&mut svm, OVERDUE_AT);
+    assert_program_err(flag_not_returned(&mut svm, rental, &owner), ErrorCode::ReturnWindowStillOpen);
+    set_time(&mut svm, OVERDUE_AT + 1);
+    flag_not_returned(&mut svm, rental, &owner).unwrap();
+}
+
+#[test]
+fn grace_change_before_arrival_applies_to_that_rental() {
+    let mut svm = setup();
+    let admin = init_test_config(&mut svm);
+    let (owner, renter) = (funded(&mut svm), funded(&mut svm));
+    let listing = list_item(&mut svm, &owner, "Canon R5");
+    let rental = rent(&mut svm, listing, &renter);
+    phase1(&mut svm, rental, &owner).unwrap();
+    // Changed while in transit: arrival is when the date is fixed.
+    set_grace(&mut svm, &admin, 10 * DAY);
+    phase2(&mut svm, rental, &renter).unwrap();
+
+    let overdue_at = START_TIME + WEEKS as i64 * WEEK + 10 * DAY;
+    set_time(&mut svm, overdue_at);
+    assert_program_err(flag_not_returned(&mut svm, rental, &owner), ErrorCode::ReturnWindowStillOpen);
+    set_time(&mut svm, overdue_at + 1);
+    flag_not_returned(&mut svm, rental, &owner).unwrap();
+}
+
 #[test]
 fn not_returned_unavailable_for_legacy_rental_without_timeline() {
     // No timeline means no return date; admin_open_dispute is the exit.
@@ -203,7 +248,7 @@ fn not_returned_unavailable_for_legacy_rental_without_timeline() {
         &mut svm,
         ix(
             greyswan::instruction::SubmitPhase2 { photos: "ipfs://QmPhase2".to_string() },
-            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), renter },
+            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), config: config_pda(), renter },
         ),
         renter,
     )
@@ -428,7 +473,7 @@ fn completion_unavailable_for_legacy_rental_without_timeline() {
         &mut svm,
         ix(
             greyswan::instruction::SubmitPhase2 { photos: "ipfs://QmPhase2".to_string() },
-            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), renter },
+            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), config: config_pda(), renter },
         ),
         renter,
     )

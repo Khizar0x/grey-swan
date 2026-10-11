@@ -264,7 +264,10 @@ pub struct RentalTimeline {
     pub return_shipped_at: i64,
     // return_shipped_at + inspection_deadline_secs, fixed at that moment.
     pub inspection_deadline: i64,
-    pub reserved: [u8; 24],
+    // return_due_at + not_returned_grace_secs, fixed at arrival so a later
+    // Config change doesn't move it. flag_not_returned opens after this.
+    pub not_returned_after: i64,
+    pub reserved: [u8; 16],
 }
 
 // Only `Open` for now. New variants must be appended, never reordered (same

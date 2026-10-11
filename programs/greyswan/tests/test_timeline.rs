@@ -51,7 +51,8 @@ fn phase1_creates_timeline_paid_by_owner() {
     assert_eq!(timeline.return_due_at, 0);
     assert_eq!(timeline.return_shipped_at, 0);
     assert_eq!(timeline.inspection_deadline, 0);
-    assert_eq!(timeline.reserved, [0u8; 24]);
+    assert_eq!(timeline.not_returned_after, 0);
+    assert_eq!(timeline.reserved, [0u8; 16]);
 
     let size = 8 + RentalTimeline::INIT_SPACE;
     assert_eq!(size, 113);
@@ -140,6 +141,7 @@ fn renter_cannot_dodge_deadline_with_another_timeline_address() {
             greyswan::accounts::SubmitPhase2 {
                 rental,
                 timeline: empty,
+                config: config_pda(),
                 renter: renter.pubkey(),
             },
         ),
@@ -177,6 +179,7 @@ fn legacy_rental_without_timeline_can_still_arrive() {
             greyswan::accounts::SubmitPhase2 {
                 rental,
                 timeline: timeline_pda(&rental),
+                config: config_pda(),
                 renter,
             },
         ),
@@ -194,7 +197,7 @@ fn legacy_rental_without_timeline_can_still_be_sent_back() {
         &mut svm,
         ix(
             greyswan::instruction::SubmitPhase2 { photos: "ipfs://QmPhase2".to_string() },
-            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), renter },
+            greyswan::accounts::SubmitPhase2 { rental, timeline: timeline_pda(&rental), config: config_pda(), renter },
         ),
         renter,
     )
@@ -316,6 +319,7 @@ fn confirm_after_deadline_not_available_for_legacy_rental() {
 
 const WEEK: i64 = 7 * 86_400;
 const DEFAULT_INSPECTION: i64 = 7 * 86_400;
+const DEFAULT_GRACE: i64 = 3 * 86_400;
 
 fn timeline(svm: &LiteSVM, rental: &Pubkey) -> RentalTimeline {
     read::<RentalTimeline>(svm, &timeline_pda(rental))
@@ -331,6 +335,7 @@ fn rental_period_starts_when_the_renter_has_the_item() {
     let t = timeline(&svm, &rental);
     assert_eq!(t.arrived_at, arrived);
     assert_eq!(t.return_due_at, arrived + WEEKS as i64 * WEEK);
+    assert_eq!(t.not_returned_after, t.return_due_at + DEFAULT_GRACE);
     // Not from payment: the rental was paid for at START_TIME.
     assert_eq!(read::<Rental>(&svm, &rental).created_at, START_TIME);
     assert_eq!(t.return_shipped_at, 0);
@@ -349,6 +354,7 @@ fn forced_arrival_starts_the_rental_period_at_the_missed_deadline() {
     assert_eq!(t.arrived_at, t.arrival_deadline);
     assert_eq!(t.arrived_at, START_TIME + DEFAULT_WINDOW);
     assert_eq!(t.return_due_at, START_TIME + DEFAULT_WINDOW + WEEKS as i64 * WEEK);
+    assert_eq!(t.not_returned_after, t.return_due_at + DEFAULT_GRACE);
 }
 
 #[test]
@@ -394,4 +400,5 @@ fn stored_deadlines_do_not_move_when_config_changes() {
     let t = timeline(&svm, &rental);
     assert_eq!(t.arrival_deadline, START_TIME + DEFAULT_WINDOW);
     assert_eq!(t.inspection_deadline, START_TIME + DEFAULT_INSPECTION);
+    assert_eq!(t.not_returned_after, START_TIME + WEEKS as i64 * WEEK + DEFAULT_GRACE);
 }

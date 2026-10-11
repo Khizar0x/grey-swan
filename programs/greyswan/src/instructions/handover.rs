@@ -41,11 +41,17 @@ pub(crate) fn check_arrival_deadline(timeline: &AccountInfo) -> Result<()> {
 }
 
 /// Starts the rental period: it runs from when the renter has the item.
-fn record_arrival(timeline: &mut RentalTimeline, arrived_at: i64, weeks: u16) -> Result<()> {
+/// Also fixes when the owner may report the item as not returned, from the
+/// grace period in Config at this moment.
+fn record_arrival(timeline: &mut RentalTimeline, arrived_at: i64, weeks: u16, config: &Config) -> Result<()> {
     timeline.arrived_at = arrived_at;
     timeline.return_due_at = (weeks as i64)
         .checked_mul(SECONDS_PER_WEEK)
         .and_then(|period| arrived_at.checked_add(period))
+        .ok_or(crate::error::ErrorCode::MathOverflow)?;
+    timeline.not_returned_after = timeline
+        .return_due_at
+        .checked_add(config.not_returned_grace_secs)
         .ok_or(crate::error::ErrorCode::MathOverflow)?;
     Ok(())
 }
@@ -135,6 +141,10 @@ pub struct SubmitPhase2<'info> {
     #[account(mut, seeds = [TIMELINE_SEED, rental.key().as_ref()], bump)]
     pub timeline: UncheckedAccount<'info>,
 
+    // Read once here to fix this rental's not-returned date.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+
     pub renter: Signer<'info>,
 }
 
@@ -157,7 +167,12 @@ pub fn handle_submit_phase2(ctx: Context<SubmitPhase2>, photos: String) -> Resul
 
     if let Some(mut timeline) = load_timeline(&ctx.accounts.timeline)? {
         require_within_arrival_window(&timeline)?;
-        record_arrival(&mut timeline, Clock::get()?.unix_timestamp, ctx.accounts.rental.weeks)?;
+        record_arrival(
+            &mut timeline,
+            Clock::get()?.unix_timestamp,
+            ctx.accounts.rental.weeks,
+            &ctx.accounts.config,
+        )?;
         save_timeline(&ctx.accounts.timeline, &timeline)?;
     }
 
@@ -184,6 +199,10 @@ pub struct ConfirmArrivalAfterDeadline<'info> {
     // so it has no deadline) fails here.
     #[account(mut, seeds = [TIMELINE_SEED, rental.key().as_ref()], bump = timeline.bump)]
     pub timeline: Account<'info, RentalTimeline>,
+
+    // Read once here to fix this rental's not-returned date.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
 
     pub owner: Signer<'info>,
 }
@@ -218,7 +237,7 @@ pub fn handle_confirm_arrival_after_deadline(ctx: Context<ConfirmArrivalAfterDea
     // the owner gets round to calling this, so a late call can't push the
     // renter's return date later (or earlier).
     let deadline = ctx.accounts.timeline.arrival_deadline;
-    record_arrival(&mut ctx.accounts.timeline, deadline, ctx.accounts.rental.weeks)?;
+    record_arrival(&mut ctx.accounts.timeline, deadline, ctx.accounts.rental.weeks, &ctx.accounts.config)?;
 
     Ok(())
 }

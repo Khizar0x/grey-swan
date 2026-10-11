@@ -142,6 +142,7 @@ fn test_confirm_return() {
         greyswan::accounts::SubmitPhase2 {
             rental: rental.pubkey(),
             timeline: common::timeline_pda(&rental.pubkey()),
+            config: common::config_pda(),
             renter: renter.pubkey(),
         }
         .to_account_metas(None),

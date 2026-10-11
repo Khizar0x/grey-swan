@@ -189,6 +189,7 @@ pub fn phase2(svm: &mut LiteSVM, rental: Pubkey, renter: &Keypair) -> Result<(),
             greyswan::accounts::SubmitPhase2 {
                 rental,
                 timeline: timeline_pda(&rental),
+                config: config_pda(),
                 renter: renter.pubkey(),
             },
         ),
@@ -239,7 +240,7 @@ pub fn all_phases(svm: &mut LiteSVM, rental: Pubkey, owner: &Keypair, renter: &K
 pub fn confirm_after_deadline_ix(rental: Pubkey, owner: Pubkey) -> Instruction {
     ix(
         greyswan::instruction::ConfirmArrivalAfterDeadline {},
-        greyswan::accounts::ConfirmArrivalAfterDeadline { rental, timeline: timeline_pda(&rental), owner },
+        greyswan::accounts::ConfirmArrivalAfterDeadline { rental, timeline: timeline_pda(&rental), config: config_pda(), owner },
     )
 }
 
