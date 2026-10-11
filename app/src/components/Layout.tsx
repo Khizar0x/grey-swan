@@ -2,12 +2,14 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import swanLogo from '../assets/swan-logo.png'
+import { IconChevronDown, IconPlane } from './icons'
 import { useAuthContext } from '../lib/AuthContext'
-import { CATEGORIES } from '../lib/listing'
-import { reverseGeocodeArea } from '../lib/mapbox'
+import { CATEGORIES, isVirtualCategory } from '../lib/listing'
+import { geocodeArea, reverseGeocodeArea } from '../lib/mapbox'
 import { useSavedArea } from '../lib/SavedAreaContext'
 import { C, FONT_HEAD } from '../lib/theme'
 import { useSolBalance } from '../lib/useSolBalance'
+import { useUnreadMessagesTotal } from '../lib/useUnreadMessagesTotal'
 import { useWalletModal } from '../lib/WalletModalContext'
 
 const NAV_LINKS = [
@@ -92,6 +94,36 @@ function LocationPill() {
   const [detectError, setDetectError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // Display-only: the pill shows just the city (e.g. "London"), never the
+  // full saved string — but the saved string itself (`area`, in
+  // SavedAreaContext/localStorage) is untouched, since Home.tsx's and
+  // ListingDetail.tsx's distance estimates re-geocode that exact string and
+  // need its full precision. Re-geocoding here just to extract a shorter
+  // label is a second Mapbox call, but it's cheap (fires only when `area`
+  // changes, not on every render) and works the same way regardless of
+  // whether `area` came from "Use my current location" or was typed by
+  // hand — there's no structured Mapbox data left to reuse for a typed
+  // string anyway, so both paths need this same derivation.
+  const [displayCity, setDisplayCity] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!area) {
+      setDisplayCity(null)
+      return
+    }
+    let cancelled = false
+    geocodeArea(area)
+      .then((result) => {
+        if (!cancelled) setDisplayCity(result?.city ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setDisplayCity(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [area])
+
   useEffect(() => {
     if (promptOpen) setOpen(true)
   }, [promptOpen])
@@ -154,7 +186,7 @@ function LocationPill() {
   }
 
   return (
-    <div ref={containerRef} className="relative hidden max-w-[240px] shrink-0 md:block">
+    <div ref={containerRef} className="relative hidden max-w-[240px] shrink-0 lg:block">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -164,14 +196,16 @@ function LocationPill() {
           {area ? 'Delivering to' : 'Your area'}
         </span>
         <span className="flex w-full min-w-0 items-baseline gap-1 text-xs font-semibold leading-tight">
-          {/* Area text truncates with an ellipsis — a reverse-geocoded
-              address can run long (e.g. "Charing Cross, Westminster,
-              London, Greater London, England, United Kingdom"), and without
-              this it pushes the search bar and wallet pill out of the
-              header. "Update location" never shrinks, since it's the
+          {/* Shows just the city (displayCity) once it resolves — never the
+              full saved string, which can run long (e.g. "Charing Cross,
+              Westminster, London, Greater London, England, United
+              Kingdom"). The saved string itself is untouched (see the
+              effect above); this is display-only. truncate/min-w-0 stay as
+              a second line of defense for an unresolved or unusually long
+              city name. "Update location" never shrinks, since it's the
               actionable part. */}
           <span className="min-w-0 truncate" style={{ color: C.navDarkText }}>
-            {area ?? 'Set your area'}
+            {displayCity ?? area ?? 'Set your area'}
           </span>
           <span className="shrink-0" style={{ color: C.navDarkMuted, textDecoration: 'underline' }}>
             · Update location
@@ -200,7 +234,7 @@ function LocationPill() {
             placeholder="e.g. Shoreditch, London"
             autoFocus
             className="w-full rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none"
-            style={{ background: 'rgba(38,34,32,0.04)', border: `1px solid ${C.border}`, color: C.cream }}
+            style={{ background: C.inputBg, border: `1px solid ${C.border}`, color: C.cream }}
           />
           <button
             type="button"
@@ -249,7 +283,20 @@ function WalletCorner() {
   const { signedIn, signingIn, signIn } = useAuthContext()
   const balance = useSolBalance()
   const { open } = useWalletModal()
+  const navigate = useNavigate()
   const address = publicKey ? `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}` : ''
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [menuOpen])
 
   // Small, corner-only, secondary-styled — a persistent affordance, not a
   // gate. Browsing never needs this; it only matters once someone rents or lists.
@@ -284,20 +331,63 @@ function WalletCorner() {
     }
 
     return (
-      <button
-        onClick={() => void disconnect()}
-        title="Disconnect"
-        className="flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 transition-all"
-        style={{ background: C.surface2, border: `1px solid ${C.border}` }}
-      >
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: C.green }} />
-        <span className="font-mono text-xs" style={{ color: C.muted }}>
-          {address}
-        </span>
-        <span className="text-xs font-semibold" style={{ color: C.gold }}>
-          {balance === null ? '…' : balance.toFixed(2)} SOL
-        </span>
-      </button>
+      <div ref={menuRef} className="relative shrink-0">
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          title="Account menu"
+          className="flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 transition-all"
+          style={{ background: C.surface2, border: `1px solid ${C.border}` }}
+        >
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: C.green }} />
+          <span className="font-mono text-xs" style={{ color: C.muted }}>
+            {address}
+          </span>
+          <span className="text-xs font-semibold" style={{ color: C.gold }}>
+            {balance === null ? '…' : balance.toFixed(2)} SOL
+          </span>
+          <span style={{ color: C.faint, transform: menuOpen ? 'rotate(180deg)' : 'none' }}>
+            <IconChevronDown />
+          </span>
+        </button>
+
+        {menuOpen && (
+          <div
+            className="absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-xl py-1 shadow-lg"
+            style={{ background: C.surface, border: `1px solid ${C.border}` }}
+          >
+            <button
+              onClick={() => {
+                setMenuOpen(false)
+                navigate('/account')
+              }}
+              className="block w-full px-4 py-2.5 text-left text-sm transition-colors hover:opacity-80"
+              style={{ color: C.cream }}
+            >
+              Account settings
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false)
+                open()
+              }}
+              className="block w-full px-4 py-2.5 text-left text-sm transition-colors hover:opacity-80"
+              style={{ color: C.cream }}
+            >
+              Switch wallet
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false)
+                void disconnect()
+              }}
+              className="block w-full px-4 py-2.5 text-left text-sm transition-colors hover:opacity-80"
+              style={{ color: C.rust, borderTop: `1px solid ${C.border}` }}
+            >
+              Disconnect
+            </button>
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -332,7 +422,10 @@ function CategoriesBar() {
         >
           All items
         </Link>
-        {CATEGORIES.map((cat) => {
+        {/* Digital & Cloud never appears as a department chip here — it has
+            its own entry point (the Home page banner, to /digital) and its
+            own newest-first view, never mixed into the physical grid. */}
+        {CATEGORIES.filter((cat) => !isVirtualCategory(cat.key)).map((cat) => {
           const active = activeCategory === cat.key
           return (
             <Link
@@ -363,10 +456,29 @@ function CategoriesBar() {
 // categories would push them off-screen and out of reach.
 function AccountLinks() {
   const location = useLocation()
+  const unreadTotal = useUnreadMessagesTotal()
+  const messagesActive = location.pathname.startsWith('/messages')
   return (
     <div className="hidden shrink-0 items-center gap-5 md:flex">
+      <Link
+        to="/messages"
+        title="Messages"
+        aria-label="Messages"
+        className="relative flex items-center transition-colors hover:text-white"
+        style={{ color: messagesActive ? C.navDarkText : C.navDarkMuted }}
+      >
+        <IconPlane />
+        {unreadTotal > 0 && (
+          <span
+            className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold"
+            style={{ background: C.rust, color: C.onAccent }}
+          >
+            {unreadTotal > 9 ? '9+' : unreadTotal}
+          </span>
+        )}
+      </Link>
       {NAV_LINKS.map((link) => {
-        const active = location.pathname === link.to
+        const active = location.pathname.startsWith(link.to)
         return (
           <Link
             key={link.to}
