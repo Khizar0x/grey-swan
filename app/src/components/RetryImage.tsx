@@ -1,4 +1,5 @@
-import { useEffect, useState, type CSSProperties, type MouseEventHandler } from 'react'
+import { useEffect, useState, type CSSProperties, type MouseEventHandler, type ReactNode } from 'react'
+import { C } from '../lib/theme'
 
 // A freshly-pinned photo can resolve through the gateway at a different
 // moment than its manifest does (they're separate files, uploaded and
@@ -14,6 +15,7 @@ export function RetryImage({
   onClick,
   maxAttempts = 5,
   retryDelayMs = 1500,
+  fallback,
 }: {
   src: string
   alt: string
@@ -22,6 +24,7 @@ export function RetryImage({
   onClick?: MouseEventHandler<HTMLImageElement>
   maxAttempts?: number
   retryDelayMs?: number
+  fallback?: ReactNode
 }) {
   const [attempt, setAttempt] = useState(0)
   const [errorCount, setErrorCount] = useState(0)
@@ -34,7 +37,7 @@ export function RetryImage({
     setFailed(false)
     // Re-selecting a photo the browser already has cached (e.g. clicking
     // back to a thumbnail you've already viewed) loads instantly — starting
-    // `loaded` at false regardless would flash the skeleton on and straight
+    // loaded at false regardless would flash the skeleton on and straight
     // back off as onLoad fires a moment later, even though the image never
     // needed to reload. A synchronous cache probe lets an already-cached
     // photo skip the flash while a genuinely new one still shows it while
@@ -58,9 +61,12 @@ export function RetryImage({
   }, [errorCount, maxAttempts, retryDelayMs])
 
   if (failed) {
+    if (fallback) {
+      return <>{fallback}</>
+    }
     return (
-      <div className={className} style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(38,34,32,0.06)' }}>
-        <span style={{ fontSize: '0.65rem', color: '#9A9088' }}>Couldn't load</span>
+      <div className={className} style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.subtleBg }}>
+        <span style={{ fontSize: '0.65rem', color: C.faint }}>Couldn't load</span>
       </div>
     )
   }
