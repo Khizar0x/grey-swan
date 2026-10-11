@@ -11,9 +11,15 @@ import type { Greyswan } from '../idl/greyswan.ts'
 // prepared, so both steps have to happen quickly. If it has expired, reviewer
 // one simply prepares it again.
 
+function connectedWallet(program: Program<Greyswan>) {
+  const wallet = program.provider.wallet
+  if (!wallet) throw new Error('Connect a wallet first.')
+  return wallet
+}
+
 export async function signAsFirstReviewer(program: Program<Greyswan>, tx: Transaction): Promise<string> {
   const provider = program.provider
-  const wallet = provider.wallet
+  const wallet = connectedWallet(program)
   tx.feePayer = wallet.publicKey
   tx.recentBlockhash = (await provider.connection.getLatestBlockhash('confirmed')).blockhash
   const signed = await wallet.signTransaction(tx)
@@ -28,7 +34,7 @@ export async function signAsSecondReviewerAndSend(program: Program<Greyswan>, en
   } catch {
     throw new Error("That doesn't look like a prepared decision. Copy the whole text again.")
   }
-  const signed = await provider.wallet.signTransaction(tx)
+  const signed = await connectedWallet(program).signTransaction(tx)
   const signature = await provider.connection.sendRawTransaction(signed.serialize())
   await provider.connection.confirmTransaction(signature, 'confirmed')
   return signature
