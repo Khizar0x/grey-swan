@@ -96,11 +96,22 @@ fn not_returned_after_grace_opens_dispute_that_resolve_settles() {
     // A reviewer settles it with the existing resolve_dispute.
     let owner_before = lamports(&svm, &owner.pubkey());
     let renter_before = lamports(&svm, &renter.pubkey());
+    // Everything to the owner is a Major share: two reviewers.
+    let second = add_reviewer(&mut svm, &admin);
     send(
         &mut svm,
-        resolve_dispute_ix(listing, rental, admin.pubkey(), owner.pubkey(), renter.pubkey(), TOTAL_HELD, 0),
+        resolve_dispute_with_ix(
+            listing,
+            rental,
+            admin.pubkey(),
+            Some(second.pubkey()),
+            owner.pubkey(),
+            renter.pubkey(),
+            TOTAL_HELD,
+            0,
+        ),
         &admin,
-        &[&admin],
+        &[&admin, &second],
     )
     .unwrap();
     assert_eq!(state(&svm, &rental).status, RentalStatus::Resolved);
@@ -644,9 +655,13 @@ fn admin_opens_and_resolves_real_legacy_devnet_rental() {
     let held = s.total_rental_cost + s.deposit_amount;
     let rental_before = lamports(&svm, &rental);
     let wallet_before = lamports(&svm, &s.renter);
+    // The migrated Config has no reviewers; one is added as a second signer
+    // in case this split needs one.
+    let second = Pubkey::new_unique();
+    send_as(&mut svm, set_reviewers_ix(admin, vec![second]), admin).unwrap();
     send_as(
         &mut svm,
-        resolve_dispute_ix(s.listing, rental, admin, s.owner, s.renter, held / 2, held - held / 2),
+        resolve_dispute_with_ix(s.listing, rental, admin, Some(second), s.owner, s.renter, held / 2, held - held / 2),
         admin,
     )
     .unwrap();
@@ -748,11 +763,22 @@ fn not_received_opens_dispute_and_blocks_timed_out_completion() {
     // The renter can no longer complete it by timeout; a reviewer decides.
     set_time(&mut svm, START_TIME + INSPECTION + 1);
     assert_program_err(complete(&mut svm, listing, rental, &owner, &renter), ErrorCode::InvalidRentalStatus);
+    // Everything to the owner is a Major share: two reviewers.
+    let second = add_reviewer(&mut svm, &admin);
     send(
         &mut svm,
-        resolve_dispute_ix(listing, rental, admin.pubkey(), owner.pubkey(), renter.pubkey(), TOTAL_HELD, 0),
+        resolve_dispute_with_ix(
+            listing,
+            rental,
+            admin.pubkey(),
+            Some(second.pubkey()),
+            owner.pubkey(),
+            renter.pubkey(),
+            TOTAL_HELD,
+            0,
+        ),
         &admin,
-        &[&admin],
+        &[&admin, &second],
     )
     .unwrap();
     assert_eq!(state(&svm, &rental).status, RentalStatus::Resolved);

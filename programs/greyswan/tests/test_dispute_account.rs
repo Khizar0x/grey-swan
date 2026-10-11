@@ -89,17 +89,28 @@ fn resolve_dispute_marks_the_dispute_account_resolved() {
     reject_on_arrival(&mut svm, rental, &renter).unwrap();
     warp(&mut svm, 100);
 
+    // A full refund (more than the deposit back) needs a second reviewer.
+    let second = add_reviewer(&mut svm, &admin);
     send(
         &mut svm,
-        resolve_dispute_ix(listing, rental, admin.pubkey(), owner.pubkey(), renter.pubkey(), 0, TOTAL_HELD),
+        resolve_dispute_with_ix(
+            listing,
+            rental,
+            admin.pubkey(),
+            Some(second.pubkey()),
+            owner.pubkey(),
+            renter.pubkey(),
+            0,
+            TOTAL_HELD,
+        ),
         &admin,
-        &[&admin],
+        &[&admin, &second],
     )
     .unwrap();
     assert_eq!(read::<Rental>(&svm, &rental).status, RentalStatus::Resolved);
     let dispute = read::<Dispute>(&svm, &dispute_pda(&rental));
     assert_eq!(dispute.status, DisputeStatus::Resolved);
-    assert_eq!(dispute.resolved_by, [admin.pubkey(), Pubkey::default()]);
+    assert_eq!(dispute.resolved_by, [admin.pubkey(), second.pubkey()]);
     assert_eq!(dispute.resolved_at, START_TIME + 100);
 }
 
@@ -151,6 +162,11 @@ fn legacy_devnet_dispute_without_dispute_account_still_resolves() {
     )
     .unwrap();
 
+    // The migrated Config has no reviewers. A full refund needs a second
+    // one, so one is added first (a deploy step).
+    let second = Pubkey::new_unique();
+    send_as(&mut svm, set_reviewers_ix(admin, vec![second]), admin).unwrap();
+
     let state = read::<Rental>(&svm, &rental);
     assert_eq!(state.status, RentalStatus::Disputed);
     assert!(svm.get_account(&dispute_pda(&rental)).is_none());
@@ -166,7 +182,7 @@ fn legacy_devnet_dispute_without_dispute_account_still_resolves() {
                 listing,
                 rental,
                 dispute: common::dispute_pda(&rental),
-                second_reviewer: None,
+                second_reviewer: Some(second),
                 admin,
                 owner: state.owner,
                 renter: state.renter,

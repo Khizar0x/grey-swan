@@ -314,6 +314,23 @@ pub fn resolve_dispute_ix(
     owner_amount: u64,
     renter_amount: u64,
 ) -> Instruction {
+    resolve_dispute_with_ix(listing, rental, admin, None, owner, renter, owner_amount, renter_amount)
+}
+
+/// resolve_dispute with an optional second reviewer, needed for a Major
+/// share to the owner, more than the deposit back to the renter, or a total
+/// above the threshold.
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_dispute_with_ix(
+    listing: Pubkey,
+    rental: Pubkey,
+    admin: Pubkey,
+    second_reviewer: Option<Pubkey>,
+    owner: Pubkey,
+    renter: Pubkey,
+    owner_amount: u64,
+    renter_amount: u64,
+) -> Instruction {
     ix(
         greyswan::instruction::ResolveDispute { owner_amount, renter_amount },
         greyswan::accounts::ResolveDispute {
@@ -321,13 +338,31 @@ pub fn resolve_dispute_ix(
             listing,
             rental,
             dispute: dispute_pda(&rental),
-            second_reviewer: None,
+            second_reviewer,
             admin,
             owner,
             renter,
             system_program: system_program::ID,
         },
     )
+}
+
+/// update_config replacing the reviewer list.
+pub fn set_reviewers_ix(admin: Pubkey, reviewers: Vec<Pubkey>) -> Instruction {
+    ix(
+        greyswan::instruction::UpdateConfig {
+            update: greyswan::instructions::ConfigUpdate { reviewers: Some(reviewers), ..Default::default() },
+        },
+        greyswan::accounts::UpdateConfig { config: config_pda(), admin },
+    )
+}
+
+/// Adds one funded reviewer to a Config with none, for tests that need a
+/// second signature next to the admin.
+pub fn add_reviewer(svm: &mut LiteSVM, admin: &Keypair) -> Keypair {
+    let reviewer = funded(svm);
+    send(svm, set_reviewers_ix(admin.pubkey(), vec![reviewer.pubkey()]), admin, &[admin]).unwrap();
+    reviewer
 }
 
 pub fn init_config(svm: &mut LiteSVM, admin: &Keypair) {

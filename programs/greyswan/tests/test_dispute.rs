@@ -592,7 +592,9 @@ fn test_resolve_dispute() {
 
     let renter_before = svm.get_account(&renter.pubkey()).unwrap().lamports;
 
-    // Admin rules in the renter's favour — full refund
+    // Admin rules in the renter's favour — full refund. Refunding more than
+    // the deposit needs a second reviewer alongside the admin.
+    let second = common::add_reviewer(&mut svm, &admin);
     svm.expire_blockhash();
     send(
         &mut svm,
@@ -608,7 +610,7 @@ fn test_resolve_dispute() {
                 listing,
                 rental: rental.pubkey(),
                 dispute: common::dispute_pda(&rental.pubkey()),
-                second_reviewer: None,
+                second_reviewer: Some(second.pubkey()),
                 admin: admin.pubkey(),
                 owner: owner.pubkey(),
                 renter: renter.pubkey(),
@@ -617,7 +619,7 @@ fn test_resolve_dispute() {
             .to_account_metas(None),
         ),
         &admin,
-        &[&admin],
+        &[&admin, &second],
     )
     .unwrap();
 

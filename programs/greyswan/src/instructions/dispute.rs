@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
-use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
+use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_BPS, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
 use crate::instructions::handover::{check_arrival_deadline, load_timeline};
-use crate::instructions::verdict::second_reviewer_key;
+use crate::instructions::verdict::{second_reviewer_key, MAJOR_TIER};
 use crate::state::{
     Config, Dispute, DisputeKind, DisputeStatus, HandoverPhase, Listing, Rental, RentalStatus,
     RentalTimeline,
@@ -375,7 +375,8 @@ pub struct ResolveDispute<'info> {
     // Named `admin` for existing clients; any Config reviewer may sign.
     pub admin: Signer<'info>,
 
-    // Needed when the funds held are above two_reviewer_threshold_lamports.
+    // Needed above two_reviewer_threshold_lamports, for a Major share to the
+    // owner, or for more than the deposit back to the renter.
     pub second_reviewer: Option<Signer<'info>>,
 
     /// CHECK: verified against rental.owner in the handler
@@ -433,8 +434,15 @@ pub fn handle_resolve_dispute(
         crate::error::ErrorCode::ResolutionAmountMismatch,
     );
 
-    // Everything held is being split here, rent and deposit together.
-    let needs_two = total_held > ctx.accounts.config.two_reviewer_threshold_lamports;
+    // Two reviewers when a lot is held (rent and deposit are split together
+    // here), when the owner gets a Major share of it, or when the renter gets
+    // back more than the deposit (e.g. an arrival rejection fully upheld).
+    let config = &ctx.accounts.config;
+    let owner_gets_major = owner_amount as u128 * MAX_BPS as u128
+        >= total_held as u128 * config.rubric_bps[MAJOR_TIER] as u128;
+    let needs_two = total_held > config.two_reviewer_threshold_lamports
+        || owner_gets_major
+        || renter_amount > ctx.accounts.rental.deposit_amount;
     let second = second_reviewer_key(
         &ctx.accounts.config,
         &reviewer,

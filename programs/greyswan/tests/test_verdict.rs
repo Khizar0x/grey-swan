@@ -1014,10 +1014,12 @@ fn split_ix(c: &Case, signer: Pubkey, second: Option<Pubkey>, owner_amount: u64)
 fn a_reviewer_splits_other_disputes_exactly_with_no_platform_fee() {
     let (mut svm, c) = rejected_on_arrival();
     let before = balances(&svm, &c);
-    send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, 1_234_567), &c.reviewer, &[&c.reviewer]).unwrap();
+    // An uneven amount one reviewer can decide alone.
+    let owner_amount = ALONE_OK + 1_234_567;
+    send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, owner_amount), &c.reviewer, &[&c.reviewer]).unwrap();
     assert_eq!(
         moved(before, balances(&svm, &c)),
-        [1_234_567, (TOTAL_HELD - 1_234_567) as i128, 0, -(TOTAL_HELD as i128)]
+        [owner_amount as i128, (TOTAL_HELD - owner_amount) as i128, 0, -(TOTAL_HELD as i128)]
     );
     let d = dispute(&svm, &c.rental);
     assert_eq!(d.status, DisputeStatus::Resolved);
@@ -1036,23 +1038,66 @@ fn only_reviewers_can_split_other_disputes() {
     assert_eq!(dispute(&svm, &c.rental).status, DisputeStatus::Open);
 }
 
+/// An owner amount one reviewer may decide alone with the test rental
+/// (35M held, 20M deposit): the renter gets no more than the deposit back,
+/// and the owner gets under the Major 80%.
+const ALONE_OK: u64 = 20_000_000;
+/// 80% of TOTAL_HELD, the default Major share.
+const MAJOR_OF_HELD: u64 = TOTAL_HELD * 8 / 10;
+
 #[test]
 fn splitting_more_than_the_threshold_needs_two_reviewers() {
     let (mut svm, c) = rejected_on_arrival();
     configure(&mut svm, &c.admin, ConfigUpdate { two_reviewer_threshold_lamports: Some(TOTAL_HELD - 1), ..Default::default() });
-    let alone = send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, 0), &c.reviewer, &[&c.reviewer]);
+    let alone = send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, ALONE_OK), &c.reviewer, &[&c.reviewer]);
     assert_program_err(alone, ErrorCode::SecondReviewerRequired);
     let stranger = funded(&mut svm);
-    let with_stranger = split_ix(&c, c.reviewer.pubkey(), Some(stranger.pubkey()), 0);
+    let with_stranger = split_ix(&c, c.reviewer.pubkey(), Some(stranger.pubkey()), ALONE_OK);
     assert_program_err(send(&mut svm, with_stranger, &c.reviewer, &[&c.reviewer, &stranger]), ErrorCode::SecondReviewerRequired);
-    let pair = split_ix(&c, c.reviewer.pubkey(), Some(c.reviewer2.pubkey()), 0);
+    let pair = split_ix(&c, c.reviewer.pubkey(), Some(c.reviewer2.pubkey()), ALONE_OK);
     send(&mut svm, pair, &c.reviewer, &[&c.reviewer, &c.reviewer2]).unwrap();
     assert_eq!(dispute(&svm, &c.rental).resolved_by, [c.reviewer.pubkey(), c.reviewer2.pubkey()]);
 
     // Exactly at the threshold, one is enough.
     let (mut svm, c) = rejected_on_arrival();
     configure(&mut svm, &c.admin, ConfigUpdate { two_reviewer_threshold_lamports: Some(TOTAL_HELD), ..Default::default() });
-    send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, 0), &c.reviewer, &[&c.reviewer]).unwrap();
+    send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, ALONE_OK), &c.reviewer, &[&c.reviewer]).unwrap();
+}
+
+#[test]
+fn a_major_share_to_the_owner_needs_two_reviewers() {
+    let (mut svm, c) = rejected_on_arrival();
+    let alone = send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, MAJOR_OF_HELD), &c.reviewer, &[&c.reviewer]);
+    assert_program_err(alone, ErrorCode::SecondReviewerRequired);
+    // The same reviewer can't sign twice.
+    let twice = split_ix(&c, c.reviewer.pubkey(), Some(c.reviewer.pubkey()), MAJOR_OF_HELD);
+    assert_program_err(send(&mut svm, twice, &c.reviewer, &[&c.reviewer]), ErrorCode::SecondReviewerRequired);
+    let pair = split_ix(&c, c.reviewer.pubkey(), Some(c.reviewer2.pubkey()), MAJOR_OF_HELD);
+    send(&mut svm, pair, &c.reviewer, &[&c.reviewer, &c.reviewer2]).unwrap();
+    assert_eq!(dispute(&svm, &c.rental).resolved_by, [c.reviewer.pubkey(), c.reviewer2.pubkey()]);
+
+    // One lamport under Major, one reviewer is enough.
+    let (mut svm, c) = rejected_on_arrival();
+    send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, MAJOR_OF_HELD - 1), &c.reviewer, &[&c.reviewer]).unwrap();
+}
+
+#[test]
+fn more_than_the_deposit_back_to_the_renter_needs_two_reviewers() {
+    // Fully upholding an arrival rejection refunds the rent as well.
+    let (mut svm, c) = rejected_on_arrival();
+    let rent_paid = TOTAL_HELD - DEPOSIT;
+    for owner_amount in [0, rent_paid - 1] {
+        let alone = send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, owner_amount), &c.reviewer, &[&c.reviewer]);
+        assert_program_err(alone, ErrorCode::SecondReviewerRequired);
+    }
+    let before = balances(&svm, &c);
+    let pair = split_ix(&c, c.reviewer.pubkey(), Some(c.admin.pubkey()), 0);
+    send(&mut svm, pair, &c.reviewer, &[&c.reviewer, &c.admin]).unwrap();
+    assert_eq!(moved(before, balances(&svm, &c)), [0, TOTAL_HELD as i128, 0, -(TOTAL_HELD as i128)]);
+
+    // Exactly the deposit back, one reviewer is enough.
+    let (mut svm, c) = rejected_on_arrival();
+    send(&mut svm, split_ix(&c, c.reviewer.pubkey(), None, rent_paid), &c.reviewer, &[&c.reviewer]).unwrap();
 }
 
 #[test]
