@@ -128,4 +128,6 @@ pub enum ErrorCode {
     PoolBalanceTooLow,
     #[msg("The owner and renter are the same wallet")]
     SameOwnerAndRenter,
+    #[msg("This verdict already gives you everything an appeal could")]
+    AppealCannotWin,
 }

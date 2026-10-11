@@ -163,6 +163,14 @@ pub fn handle_appeal(ctx: Context<Appeal>) -> Result<()> {
     );
     let already = if by_owner { dispute.owner_appealed } else { dispute.renter_appealed };
     require!(!already, crate::error::ErrorCode::AlreadyAppealed);
+    // The bond comes back only if the outcome moves the appellant's way, which
+    // can't happen when the verdict already gives them everything.
+    let cannot_win = if by_owner {
+        dispute.verdict_owner_bps == MAX_BPS
+    } else {
+        dispute.verdict_owner_bps == 0
+    };
+    require!(!cannot_win, crate::error::ErrorCode::AppealCannotWin);
 
     let bond = appeal_bond(&ctx.accounts.config, rental.deposit_amount, dispute.verdict_owner_bps, by_owner)?;
     system_program::transfer(

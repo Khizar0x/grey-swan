@@ -366,6 +366,42 @@ fn appeal_rejected_when_owner_and_renter_are_one_wallet() {
     assert_program_err(appeal(&mut svm, own, &c.owner), ErrorCode::SameOwnerAndRenter);
 }
 
+#[test]
+fn renter_cannot_appeal_a_verdict_giving_them_the_whole_deposit() {
+    let (mut svm, c) = flagged();
+    // A single NormalWear finding scores 0: the whole deposit to the renter.
+    post(&mut svm, c.rental, &c.verdict, &[0]).unwrap();
+    assert_eq!(dispute(&svm, &c.rental).verdict_owner_bps, 0);
+    let renter_before = lamports(&svm, &c.renter.pubkey());
+    assert_program_err(appeal(&mut svm, c.rental, &c.renter), ErrorCode::AppealCannotWin);
+    // Only the transaction fee left the renter; no bond was taken.
+    assert_eq!(lamports(&svm, &c.renter.pubkey()), renter_before - 5000);
+    assert_eq!(dispute(&svm, &c.rental).renter_bond, 0);
+    assert_eq!(dispute(&svm, &c.rental).status, DisputeStatus::VerdictPosted);
+    // The owner, who can still gain, may appeal.
+    appeal(&mut svm, c.rental, &c.owner).unwrap();
+}
+
+#[test]
+fn owner_cannot_appeal_a_verdict_giving_them_the_whole_deposit() {
+    // post_verdict can no longer produce a 100% verdict (it stays under
+    // Major), so the stored verdict is set to 100% directly to check the
+    // appeal rule on its own.
+    use anchor_lang::AccountSerialize;
+    let (mut svm, c) = verdict_posted();
+    let address = dispute_pda(&c.rental);
+    let mut d = dispute(&svm, &c.rental);
+    d.verdict_owner_bps = 10_000;
+    let mut account = svm.get_account(&address).unwrap();
+    let mut data = Vec::new();
+    d.try_serialize(&mut data).unwrap();
+    account.data[..data.len()].copy_from_slice(&data);
+    svm.set_account(address, account).unwrap();
+
+    assert_program_err(appeal(&mut svm, c.rental, &c.owner), ErrorCode::AppealCannotWin);
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+}
+
 // ---------- finalize_verdict and expire_appeal ----------
 
 #[derive(Clone, Copy)]
