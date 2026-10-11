@@ -25,7 +25,8 @@ export interface Ctx {
   secret: string
   caseFile: CaseFile
   images: Map<string, PreparedImage> // photo id -> prepared image
-  models: { A: string; B: string }
+  models: { A: string; B: string } // extractors + blind pass
+  judgeModels: { A: string; B: string }
 }
 
 const promptText = (req: LlmRequest) =>
@@ -74,6 +75,9 @@ async function callValidated<S extends z.ZodTypeAny>(
   }
   throw new PipelineError('invalid_output', `${base.kind} output invalid after retry (${lastProblem})`)
 }
+
+const NOW_PHASES: PhaseKey[] = ['p3', 'p4', 'dispute']
+const BEFORE_PHASES: PhaseKey[] = ['p1', 'p2']
 
 const claimKey = (c: Claim) => `${c.area}|${c.damage_type}|${c.stance}`
 export const normaliseClaims = (cs: Claim[]): string[] => [...new Set(cs.map(claimKey))].sort()
@@ -160,7 +164,7 @@ export async function judge(
   return callValidated(
     ctx,
     {
-      kind: 'judge', model: ctx.models[slot], system: P.judgeSystem(canary),
+      kind: 'judge', model: ctx.judgeModels[slot], system: P.judgeSystem(canary),
       parts: [
         { type: 'text', text: P.judgeUser(tag, JSON.stringify(claims), JSON.stringify(blind.entries), photoListText(ctx)) },
         ...photoParts(ctx),
@@ -174,6 +178,9 @@ export async function judge(
         if (seen.has(f.area)) return `duplicate finding for ${f.area}`
         seen.add(f.area)
         for (const id of [...f.photo_ids_now, ...f.photo_ids_before]) if (!phases.has(id)) return `unknown photo id ${id}`
+        // current condition comes from p3/p4/dispute photos, the baseline from p1/p2
+        for (const id of f.photo_ids_now) if (!NOW_PHASES.includes(phases.get(id)!)) return `photo ${id} is not a current-condition photo`
+        for (const id of f.photo_ids_before) if (!BEFORE_PHASES.includes(phases.get(id)!)) return `photo ${id} is not an earlier photo`
         if (f.tier > 0 && f.photo_ids_now.length === 0) return 'tier above 0 without photo evidence'
       }
       return null

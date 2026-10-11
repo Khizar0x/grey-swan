@@ -4,9 +4,11 @@ import {
   type Area, type Blind, type Claim, type Decision, type Judge, type JudgeFinding,
 } from './types.js'
 
-// Every field a decision could depend on. Reasoning text and confidence are
-// deliberately absent: reasoning is for humans only, and confidence is a
-// routing input (any "low" escalates) rather than something that must match.
+// What the models must agree on exactly: tier, claim status, earlier-photo
+// coverage and item identity. Cited photo IDs are validated (they must exist
+// and come from the right phases) but need not match between models. Not
+// compared: reasoning (humans only), confidence and injection flags (both are
+// routing rules of their own: any low / any flag escalates).
 // Only findings for areas the owner claimed take part: unclaimed damage never
 // counts toward the verdict, so models disagreeing about it is not a reason to stop.
 export const claimedFindings = (j: Judge, claimed: Set<Area>): JudgeFinding[] => j.findings.filter((f) => claimed.has(f.area))
@@ -16,11 +18,10 @@ export function decisionKey(j: Judge, claimed: Set<Area>): string {
     .sort((a, b) => a.area.localeCompare(b.area))
     .map((f) =>
       [
-        f.area, f.tier, f.claim_status, f.earlier_photos_covered_area, f.item_identity_confirmed, f.injection_detected,
-        [...f.photo_ids_now].sort().join(','), [...f.photo_ids_before].sort().join(','),
+        f.area, f.tier, f.claim_status, f.earlier_photos_covered_area, f.item_identity_confirmed,
       ].join('|'),
     )
-  return `inj=${j.injection_detected};${rows.join(';')}`
+  return rows.join(';')
 }
 
 export interface RouteInput {

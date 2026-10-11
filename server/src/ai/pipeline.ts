@@ -69,7 +69,7 @@ export async function runCase(caseFile: CaseFile, deps: PipelineDeps): Promise<P
     } else {
       const images = new Map<string, PreparedImage>()
       for (const p of caseFile.photos) images.set(p.id, await prepareImage(p.path))
-      const ctx: Ctx = { client, log, secret, caseFile, images, models: { A: config.modelA, B: config.modelB } }
+      const ctx: Ctx = { client, log, secret, caseFile, images, models: { A: config.modelA, B: config.modelB }, judgeModels: { A: config.judgeModelA, B: config.judgeModelB } }
 
       const o = await extractClaims(ctx, 'owner', owner.body)
       const r = await extractClaims(ctx, 'renter', renter.body)
@@ -103,13 +103,13 @@ export async function runCase(caseFile: CaseFile, deps: PipelineDeps): Promise<P
     decision = { kind: 'HUMAN_REVIEW', reasons: [`${code}: ${msg}`] }
   }
 
-  const promptHash = sha256(log.prompts.join('\n---\n') + `\nmodels=${config.modelA},${config.modelB}`)
+  const promptHash = sha256(log.prompts.join('\n---\n') + `\nmodels=${config.modelA},${config.modelB},${config.judgeModelA},${config.judgeModelB}`)
   const outputHash = sha256(log.outputs.join('\n---\n'))
   store.insertVerdict({
     case_id: caseFile.caseId, mode: config.mode, decision: decision.kind,
     tiers: decision.kind === 'POST_VERDICT' ? JSON.stringify(decision.tiers) : null,
     reasons: JSON.stringify(decision.reasons), prompt_hash: promptHash, output_hash: outputHash,
-    models: `${config.modelA},${config.modelB}`, reasoning: reasoning.join('\n'),
+    models: `${config.modelA},${config.modelB},${config.judgeModelA},${config.judgeModelB}`, reasoning: reasoning.join('\n'),
   })
   return { decision, promptHash, outputHash, reasoning }
 }

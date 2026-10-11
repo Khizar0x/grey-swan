@@ -33,7 +33,7 @@ async function main() {
   const config = loadAiConfig()
   const store = new AiStore(config.dbPath)
   const client = config.mode === 'live' ? new LiveClient(config, store) : scriptedMock(caseFile)
-  console.log(`mode=${config.mode} models=${config.modelA},${config.modelB} case=${caseFile.caseId}`)
+  console.log(`mode=${config.mode} models=${config.modelA},${config.modelB} judges=${config.judgeModelA},${config.judgeModelB} case=${caseFile.caseId}`)
   const res = await runCase(caseFile, { config, store, client })
   console.log(JSON.stringify(res.decision, null, 2))
   console.log(`prompt_hash=${res.promptHash}\noutput_hash=${res.outputHash}`)

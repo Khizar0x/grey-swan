@@ -6,7 +6,9 @@ export type AiMode = 'mock' | 'live'
 export interface AiConfig {
   mode: AiMode
   modelA: string
-  modelB: string
+  modelB: string // extractors and the blind pass use modelA/modelB
+  judgeModelA: string // the judges are configured separately
+  judgeModelB: string
   dailyLiveCap: number
   dbPath: string
   // Mirrors Config.large_deposit_threshold_lamports (contract default 5 SOL). The
@@ -28,6 +30,8 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     mode,
     modelA: env.AI_MODEL_A || 'claude-haiku-5-5',
     modelB: env.AI_MODEL_B || 'claude-sonnet-5-5',
+    judgeModelA: env.AI_JUDGE_MODEL_A || 'claude-sonnet-5-5',
+    judgeModelB: env.AI_JUDGE_MODEL_B || 'claude-opus-5-5',
     dailyLiveCap: Number(env.AI_DAILY_LIVE_CAP) > 0 ? Number(env.AI_DAILY_LIVE_CAP) : 40,
     dbPath: env.AI_DB_PATH || path.join(here, '..', '..', 'data', 'greyswan.db'),
     largeDepositThresholdLamports:

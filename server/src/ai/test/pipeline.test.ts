@@ -140,16 +140,42 @@ test('disagreement between the two runs of one model', async () => {
   const r = await run(await getCase('honest_crack'), { mutate: judgeEdit((j, req) => { if (req.meta.slot === 'A' && req.runIndex === 1) j.findings[0].tier = 1 }) })
   assert.match(reasonsOf(r), /disagreement/)
 })
-test('disagreement between models (each decision field)', async () => {
+test('disagreement between models on each agreed field blocks', async () => {
   const edits: Array<(f: any) => void> = [
-    (f) => { f.tier = 1 }, (f) => { f.claim_status = 'contradicted' }, (f) => { f.photo_ids_now = ['P4-1'] },
-    (f) => { f.photo_ids_before = ['P1-1'] }, (f) => { f.earlier_photos_covered_area = false },
+    (f) => { f.tier = 1 }, (f) => { f.claim_status = 'contradicted' },
+    (f) => { f.earlier_photos_covered_area = false }, (f) => { f.item_identity_confirmed = false },
   ]
   for (const edit of edits) {
     const r = await run(await getCase('honest_crack'), { mutate: judgeEdit((j, req) => { if (req.meta.slot === 'B') edit(j.findings[0]) }) })
-    assert.match(reasonsOf(r), /disagreement|uncovered/, String(edit))
-    assert.ok(isHuman(r))
+    assert.ok(isHuman(r), String(edit))
   }
+  const tier = await run(await getCase('honest_crack'), { mutate: judgeEdit((j, req) => { if (req.meta.slot === 'B') j.findings[0].tier = 1 }) })
+  assert.match(reasonsOf(tier), /disagreement/)
+})
+test('different cited photo IDs (valid, right phases) do not block agreement', async () => {
+  const r = await run(await getCase('honest_crack'), {
+    mutate: judgeEdit((j, req) => {
+      if (req.meta.slot === 'B') { j.findings[0].photo_ids_now = ['D-1']; j.findings[0].photo_ids_before = ['P2-1'] }
+      if (req.meta.slot === 'A' && req.runIndex === 1) j.findings[0].photo_ids_now = ['P4-1', 'P3-1']
+    }),
+  })
+  assert.equal(r.decision.kind, 'POST_VERDICT')
+})
+test('cited photo IDs must come from the right phases', async () => {
+  // "now" photos must be p3/p4/dispute; "before" photos p1/p2
+  const wrongNow = await run(await getCase('honest_crack'), { mutate: judgeEdit((j) => { j.findings[0].photo_ids_now = ['P1-1'] }) })
+  assert.match(reasonsOf(wrongNow), /invalid_output/)
+  const wrongBefore = await run(await getCase('honest_crack'), { mutate: judgeEdit((j) => { j.findings[0].photo_ids_before = ['P4-1'] }) })
+  assert.match(reasonsOf(wrongBefore), /invalid_output/)
+})
+test('judge models are configured separately from extractor and blind-pass models; each judge runs twice', async () => {
+  const seen: Record<string, string[]> = { extract: [], blind: [], judge: [] }
+  const r = await run(await getCase('honest_crack'), { mutate: (req, v) => { seen[req.kind].push(req.model); return v } })
+  assert.equal(r.decision.kind, 'POST_VERDICT')
+  assert.deepEqual([...new Set(seen.extract)].sort(), ['model-a', 'model-b'])
+  assert.deepEqual([...new Set(seen.blind)].sort(), ['model-a', 'model-b'])
+  assert.deepEqual(seen.judge.sort(), ['judge-a', 'judge-a', 'judge-b', 'judge-b'])
+  assert.match(r.store.listVerdicts()[0].models, /model-a,model-b,judge-a,judge-b/)
 })
 test('the two extractors must produce identical claim lists', async () => {
   const r = await run(await getCase('honest_crack'), { mutate: (req, v) => { if (req.kind === 'extract' && req.meta.slot === 'B') v.claims.push({ area: 'back', damage_type: 'dent', stance: 'damage_present' }); return v } })

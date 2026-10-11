@@ -35,6 +35,9 @@ test('mode defaults to mock; only the exact string "live" enables live', () => {
   assert.equal(loadAiConfig({}).dailyLiveCap, 40)
   assert.equal(loadAiConfig({}).modelA, 'claude-haiku-5-5')
   assert.equal(loadAiConfig({}).modelB, 'claude-sonnet-5-5')
+  assert.equal(loadAiConfig({}).judgeModelA, 'claude-sonnet-5-5')
+  assert.equal(loadAiConfig({}).judgeModelB, 'claude-opus-5-5')
+  assert.equal(loadAiConfig({ AI_JUDGE_MODEL_B: 'x' }).judgeModelB, 'x')
 })
 
 test('mock mode never constructs a live client or needs a key', async () => {
