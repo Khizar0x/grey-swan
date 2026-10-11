@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Btn, TrustNote } from '../components/atoms'
 import { IconAlert, IconCheck } from '../components/icons'
+import { MessagesEntryRow } from '../components/MessagesEntryRow'
 import { PhotoManifestField } from '../components/PhotoManifestField'
 import { RetryImage } from '../components/RetryImage'
 import { fetchAddress, saveAddress } from '../lib/addressApi'
@@ -225,6 +226,11 @@ export function RentalHandover() {
   const isOwner = publicKey ? publicKey.equals(rental.owner) : false
   const isRenter = publicKey ? publicKey.equals(rental.renter) : false
   const statusKey = enumKey(rental.status)
+  // Only a real party to this rental gets a Messages link — a stranger who
+  // loads this URL reaches the branches below without being forced to sign
+  // in (the gate right below only applies to owner/renter), so the row
+  // itself (and the token it needs) is gated on isOwner/isRenter too.
+  const isParty = isOwner || isRenter
   const step = Math.min(phaseStepIndex(rental.currentPhase) + 1, 4)
   const allPhasesDone = phaseStepIndex(rental.currentPhase) >= 4
 
@@ -317,6 +323,11 @@ export function RentalHandover() {
             "{rental.disputeReason}"
           </p>
         )}
+        {isParty && token && (
+          <div className="mt-8 text-left">
+            <MessagesEntryRow rentalPubkey={pubkey} token={token} />
+          </div>
+        )}
       </div>
     )
   }
@@ -360,6 +371,12 @@ export function RentalHandover() {
           <PhaseRecap title="Checked by owner" manifestCid={rental.phase4Photos} />
         </div>
 
+        {isParty && token && (
+          <div className="mt-8">
+            <MessagesEntryRow rentalPubkey={pubkey} token={token} />
+          </div>
+        )}
+
         <div className="mt-8 text-center">
           <Link to={isOwner ? '/my-listings' : '/my-rentals'}>
             <Btn>Back to your rentals</Btn>
@@ -385,7 +402,7 @@ export function RentalHandover() {
           <div key={s} className="flex flex-1 items-center last:flex-none">
             <div
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all"
-              style={step > s || allPhasesDone ? { background: C.primary, color: C.onAccent } : step === s ? { background: C.primary, color: C.onAccent } : { background: 'rgba(38,34,32,0.04)', border: `1px solid ${C.border}`, color: C.faint }}
+              style={step > s || allPhasesDone ? { background: C.primary, color: C.onAccent } : step === s ? { background: C.primary, color: C.onAccent } : { background: C.inputBg, border: `1px solid ${C.border}`, color: C.faint }}
             >
               {step > s || (allPhasesDone && s <= 4) ? <IconCheck /> : s}
             </div>
@@ -634,13 +651,19 @@ export function RentalHandover() {
           </div>
         )}
       </div>
+
+      {isParty && token && (
+        <div className="mt-8">
+          <MessagesEntryRow rentalPubkey={pubkey} token={token} />
+        </div>
+      )}
     </div>
   )
 }
 
 function StepHeader({ tint, role, title, body }: { tint: 'gold' | 'rust' | 'green'; role: string; title: string; body: string }) {
   const tints = {
-    gold: { background: 'rgba(255,107,53,0.12)', border: '1px solid rgba(255,107,53,0.25)', color: C.gold },
+    gold: { background: C.accentSoft, border: '1px solid rgba(255,107,53,0.25)', color: C.gold },
     rust: { background: 'rgba(196,102,79,0.12)', border: '1px solid rgba(196,102,79,0.25)', color: C.rust },
     green: { background: 'rgba(22,163,74,0.10)', border: '1px solid rgba(22,163,74,0.22)', color: C.green },
   }
@@ -661,7 +684,7 @@ function StepHeader({ tint, role, title, body }: { tint: 'gold' | 'rust' | 'gree
 
 function WaitingNote({ text }: { text: string }) {
   return (
-    <p className="rounded-xl p-4 text-sm" style={{ background: 'rgba(38,34,32,0.03)', border: `1px solid ${C.border}`, color: C.muted }}>
+    <p className="rounded-xl p-4 text-sm" style={{ background: C.subtleBg, border: `1px solid ${C.border}`, color: C.muted }}>
       {text}
     </p>
   )
@@ -697,7 +720,7 @@ function PhaseRecap({ title, tracking, manifestCid }: { title: string; tracking?
         <div className="grid grid-cols-4 gap-2">
           {urls.map((url, i) => (
             <div key={i} className="aspect-square overflow-hidden rounded-lg" style={{ border: `1px solid ${C.border}` }}>
-              <RetryImage src={url} alt={`${title} — photo ${i + 1}`} className="h-full w-full object-cover" />
+              <RetryImage src={url} alt={`${title}, photo ${i + 1}`} className="h-full w-full object-cover" />
             </div>
           ))}
         </div>

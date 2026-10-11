@@ -4,7 +4,7 @@ import { PublicKey } from '@solana/web3.js'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { SuccessPill } from '../components/atoms'
-import { ProfileForm } from '../components/ProfileForm'
+import { ProfileForm, type ProfileFormHandle } from '../components/ProfileForm'
 import { RetryImage } from '../components/RetryImage'
 import { fetchLatestRenterAddress, saveAddress } from '../lib/addressApi'
 import { useAuthContext } from '../lib/AuthContext'
@@ -48,6 +48,12 @@ export function ListingDetail() {
   const [city, setCity] = useState('')
   const [postcode, setPostcode] = useState('')
   const [country, setCountry] = useState('')
+  // Mirrors the four fields above on every render so the prefill effect's
+  // fetch callback (below) can re-check what the renter has actually typed
+  // by the time it resolves, instead of only the stale snapshot from when
+  // the effect started — state captured in that closure never updates.
+  const addressFieldsRef = useRef({ street, city, postcode, country })
+  addressFieldsRef.current = { street, city, postcode, country }
   const deliveryAddressFilled = Boolean(street.trim() && city.trim() && postcode.trim() && country.trim())
   const composedDeliveryAddress = [street, city, postcode, country].map((s) => s.trim()).join('\n')
   const [validatingAddress, setValidatingAddress] = useState(false)
@@ -75,8 +81,12 @@ export function ListingDetail() {
   // intent forward automatically as each one clears, instead of making
   // them click "Rent Now" again after connecting or signing.
   const [pendingRent, setPendingRent] = useState(false)
-  const [showProfileStep, setShowProfileStep] = useState(false)
   const handleRentRef = useRef<(() => Promise<void>) | null>(null)
+  // The inline name/email fields (rendered when needsProfile is true, see
+  // below) aren't their own <form> — handleRent drives them via this ref
+  // instead, so there's one outer submit action, not a second nested form.
+  const profileFormRef = useRef<ProfileFormHandle>(null)
+  const needsProfile = profileChecked && !profile
 
   useEffect(() => {
     if (!pubkey) return
@@ -165,6 +175,16 @@ export function ListingDetail() {
   // itself writes (`composedDeliveryAddress` below); an address saved before
   // this structured form existed won't split cleanly into four parts, so
   // it's deliberately left alone rather than guessed at.
+  //
+  // The empty-fields guard below only stops this effect from ever starting
+  // a fetch while something's already typed — it does nothing once the
+  // fetch is in flight. A renter can still start typing in the real window
+  // between "effect starts the fetch" and "fetch resolves" (any normal
+  // network/DB latency, even a few hundred ms, is enough), so the same
+  // check is repeated against addressFieldsRef.current right before the
+  // fields actually get set — reading the ref rather than the closed-over
+  // street/city/postcode/country, which are frozen at whatever they were
+  // when this effect started and never see later keystrokes.
   useEffect(() => {
     if (deliveryMethod !== 'ship' || !publicKey || !token) return
     if (street || city || postcode || country) return
@@ -172,6 +192,8 @@ export function ListingDetail() {
     fetchLatestRenterAddress(publicKey.toBase58(), token)
       .then((saved) => {
         if (cancelled || !saved) return
+        const current = addressFieldsRef.current
+        if (current.street || current.city || current.postcode || current.country) return
         const parts = saved.split('\n').map((s) => s.trim())
         if (parts.length !== 4 || parts.some((p) => !p)) return
         const [savedStreet, savedCity, savedPostcode, savedCountry] = parts
@@ -238,9 +260,9 @@ export function ListingDetail() {
     setPendingRent(false)
     // handleRent isn't defined until after the early returns below (it
     // needs `listing`), so it's called via this ref rather than closed
-    // over directly.
-    if (!profile) setShowProfileStep(true)
-    else handleRentRef.current?.()
+    // over directly. It checks needsProfile itself and runs the inline
+    // profile fields first when that's true — no separate branch here.
+    handleRentRef.current?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingRent, connected, signingIn, signedIn, profileChecked, profile, authError])
 
@@ -305,29 +327,37 @@ export function ListingDetail() {
     if (!publicKey || !token) return
     setError(null)
 
-    if (!isVirtual && deliveryMethod === 'ship') {
-      if (!deliveryAddressFilled) {
-        setError('Fill in your full delivery address so the owner knows where to send it.')
-        return
-      }
-      setValidatingAddress(true)
-      let verified: Awaited<ReturnType<typeof geocodeAddress>> = null
-      try {
-        verified = await geocodeAddress(composedDeliveryAddress.replace(/\n/g, ', '))
-      } catch (err) {
-        setValidatingAddress(false)
-        setError(err instanceof Error ? err.message : 'Could not verify that address.')
-        return
-      }
-      setValidatingAddress(false)
-      if (!verified) {
-        setError("We couldn't verify that address. Check it for typos or add more detail (street, city, postcode).")
-        return
-      }
-    }
-
+    // Covers the whole combined action (profile save, if needed, through
+    // the on-chain transaction) under one renting/button-label state,
+    // matching the single submit click that now triggers both.
     setRenting(true)
     try {
+      if (needsProfile) {
+        const savedProfile = await profileFormRef.current?.submit()
+        if (!savedProfile) return
+      }
+
+      if (!isVirtual && deliveryMethod === 'ship') {
+        if (!deliveryAddressFilled) {
+          setError('Fill in your full delivery address so the owner knows where to send it.')
+          return
+        }
+        setValidatingAddress(true)
+        let verified: Awaited<ReturnType<typeof geocodeAddress>> = null
+        try {
+          verified = await geocodeAddress(composedDeliveryAddress.replace(/\n/g, ', '))
+        } catch (err) {
+          setValidatingAddress(false)
+          setError(err instanceof Error ? err.message : 'Could not verify that address.')
+          return
+        }
+        setValidatingAddress(false)
+        if (!verified) {
+          setError("We couldn't verify that address. Check it for typos or add more detail (street, city, postcode).")
+          return
+        }
+      }
+
       const { signature, rental } = await withTimeout(rentItem(program, new PublicKey(pubkey), publicKey, weeks))
       // The rental now exists on-chain — save the delivery address (if
       // shipping) and the chosen delivery method against its real pubkey.
@@ -386,10 +416,6 @@ export function ListingDetail() {
     if (!signedIn) {
       setPendingRent(true)
       if (!signingIn) void signIn()
-      return
-    }
-    if (profileChecked && !profile) {
-      setShowProfileStep(true)
       return
     }
     void handleRent()
@@ -505,12 +531,12 @@ export function ListingDetail() {
                 value={weeks}
                 onChange={(e) => setWeeks(Math.min(12, Math.max(1, Number(e.target.value) || 1)))}
                 className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-none"
-                style={{ background: 'rgba(38,34,32,0.04)', border: `1px solid ${C.border}`, color: C.cream }}
+                style={{ background: C.inputBg, border: `1px solid ${C.border}`, color: C.cream }}
               />
             </div>
 
             {isVirtual ? (
-              <div className="mb-5 rounded-xl p-3.5 text-sm" style={{ background: 'rgba(38,34,32,0.03)', border: `1px solid ${C.border}`, color: C.muted }}>
+              <div className="mb-5 rounded-xl p-3.5 text-sm" style={{ background: C.subtleBg, border: `1px solid ${C.border}`, color: C.muted }}>
                 No physical handover for this item. Nothing to ship or collect.
               </div>
             ) : (
@@ -526,8 +552,8 @@ export function ListingDetail() {
                       className="rounded-xl px-3 py-2.5 text-sm font-semibold transition-all"
                       style={
                         deliveryMethod === 'ship'
-                          ? { background: 'rgba(255,107,53,0.12)', border: `1px solid ${C.primary}`, color: C.primary }
-                          : { background: 'rgba(38,34,32,0.04)', border: `1px solid ${C.border}`, color: C.muted }
+                          ? { background: C.accentSoft, border: `1px solid ${C.primary}`, color: C.primary }
+                          : { background: C.inputBg, border: `1px solid ${C.border}`, color: C.muted }
                       }
                     >
                       Ship to me
@@ -538,8 +564,8 @@ export function ListingDetail() {
                       className="rounded-xl px-3 py-2.5 text-sm font-semibold transition-all"
                       style={
                         deliveryMethod === 'pickup'
-                          ? { background: 'rgba(255,107,53,0.12)', border: `1px solid ${C.primary}`, color: C.primary }
-                          : { background: 'rgba(38,34,32,0.04)', border: `1px solid ${C.border}`, color: C.muted }
+                          ? { background: C.accentSoft, border: `1px solid ${C.primary}`, color: C.primary }
+                          : { background: C.inputBg, border: `1px solid ${C.border}`, color: C.muted }
                       }
                     >
                       Collect in person
@@ -656,7 +682,7 @@ export function ListingDetail() {
                       Pickup distance
                     </label>
                     {!renterArea ? (
-                      <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(38,34,32,0.03)', border: `1px solid ${C.border}` }}>
+                      <div className="rounded-xl p-3 text-sm" style={{ background: C.subtleBg, border: `1px solid ${C.border}` }}>
                         <p className="mb-1.5" style={{ color: C.muted }}>
                           Set your area to see roughly how far this is.
                         </p>
@@ -722,33 +748,34 @@ export function ListingDetail() {
               </p>
             )}
 
-            {showProfileStep && publicKey && token ? (
-              <div className="mb-3 rounded-xl p-4" style={{ background: 'rgba(38,34,32,0.03)', border: `1px solid ${C.border}` }}>
-                <p className="mb-3 text-sm font-medium" style={{ color: C.cream }}>
+            {needsProfile && publicKey && token && (
+              <div className="mb-3 rounded-xl p-4" style={{ background: C.subtleBg, border: `1px solid ${C.border}` }}>
+                <p className="mb-1 text-sm font-medium" style={{ color: C.cream }}>
                   Tell the owner who's renting
                 </p>
+                <p className="mb-3 text-xs leading-relaxed" style={{ color: C.faint }}>
+                  So the owner knows who they're dealing with. Email is optional, and only used for rental updates like handover reminders.
+                </p>
                 <ProfileForm
+                  ref={profileFormRef}
                   showNameField
                   emailRequired={false}
-                  submitLabel="Confirm rental"
+                  renderFormTag={false}
                   onSubmit={async (name, email) => {
                     await saveProfile(publicKey.toBase58(), name, email, token)
                     refetchProfile()
-                    setShowProfileStep(false)
-                    await handleRent()
                   }}
                 />
               </div>
-            ) : (
-              <button
-                onClick={attemptRent}
-                disabled={renting || signingIn || validatingAddress}
-                className="mb-3 w-full rounded-xl py-3.5 text-base font-semibold transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
-                style={{ background: C.primary, color: C.onAccent }}
-              >
-                {rentButtonLabel}
-              </button>
             )}
+            <button
+              onClick={attemptRent}
+              disabled={renting || signingIn || validatingAddress}
+              className="mb-3 w-full rounded-xl py-3.5 text-base font-semibold transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
+              style={{ background: C.primary, color: C.onAccent }}
+            >
+              {rentButtonLabel}
+            </button>
 
             <div className="flex items-start gap-2.5 rounded-xl p-3.5" style={{ border: '1px solid rgba(15,118,110,0.22)', background: C.trustSoft }}>
               <svg className="mt-0.5 h-4 w-4 shrink-0" style={{ color: C.trust }} fill="none" stroke="currentColor" viewBox="0 0 24 24">

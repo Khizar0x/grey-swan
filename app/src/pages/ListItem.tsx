@@ -2,7 +2,7 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { useEffect, useRef, useState } from 'react'
 import { Field, SuccessPill } from '../components/atoms'
 import { PhotoManifestField } from '../components/PhotoManifestField'
-import { ProfileForm } from '../components/ProfileForm'
+import { ProfileForm, type ProfileFormHandle } from '../components/ProfileForm'
 import { useAuthContext } from '../lib/AuthContext'
 import { solToLamports } from '../lib/format'
 import { saveListingArea } from '../lib/listingAreaApi'
@@ -48,8 +48,12 @@ export function ListItem() {
   // (connected, signed in, email on file) is met, then picked back up by
   // the effect below as each one clears.
   const [pendingList, setPendingList] = useState(false)
-  const [showEmailStep, setShowEmailStep] = useState(false)
   const handleSubmitRef = useRef<(() => Promise<void>) | null>(null)
+  // The inline email/name fields (rendered when needsEmail is true, below)
+  // aren't their own <form> — handleSubmit drives them via this ref instead,
+  // so there's one outer <form> and one submit button, not a <form> nested
+  // inside this page's own <form>.
+  const profileFormRef = useRef<ProfileFormHandle>(null)
 
   const needsEstimatedValue = rarityTier !== 'common'
   const depositCapLamports = needsEstimatedValue
@@ -83,8 +87,9 @@ export function ListItem() {
     // would block it) — so wait for it first.
     if (!checked) return
     setPendingList(false)
-    if (needsEmail) setShowEmailStep(true)
-    else handleSubmitRef.current?.()
+    // handleSubmit checks needsEmail itself and runs the inline profile
+    // fields first when it's true — no separate branch needed here anymore.
+    handleSubmitRef.current?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingList, connected, signingIn, signedIn, needsEmail, checked, authError])
 
@@ -124,48 +129,56 @@ export function ListItem() {
       setError('Connect a wallet first.')
       return
     }
-    if (!category) {
-      setError('Choose a category.')
-      return
-    }
-    if (!generalArea.trim() || generalArea.length > 120) {
-      setError("Add a general area (city or postcode) so renters considering pickup can judge distance. Not your exact address.")
-      return
-    }
-    if (itemName.length > 50) {
-      setError('Item name must be 50 characters or fewer.')
-      return
-    }
-    if (description.length > 1200) {
-      setError('Description must be 1200 characters or fewer.')
-      return
-    }
-    if (!photos || photos.length > 200) {
-      setError('A photos CID is required (200 characters or fewer).')
-      return
-    }
-    const rentalPriceLamports = solToLamports(Number(rentalPrice))
-    const depositAmountLamports = solToLamports(Number(depositAmount))
-    const estimatedValueLamports = solToLamports(Number(estimatedValue) || 0)
-    if (rentalPriceLamports <= 0) {
-      setError('Rental price must be greater than zero.')
-      return
-    }
-    if (depositAmountLamports <= 0) {
-      setError('Deposit must be greater than zero.')
-      return
-    }
-    if (needsEstimatedValue && estimatedValueLamports <= 0) {
-      setError('Estimated value is required for Rare or Antique items.')
-      return
-    }
-    if (needsEstimatedValue && depositExceedsCap) {
-      setError("Deposit can't exceed 45% of the item's estimated value for Rare or Antique items.")
-      return
-    }
 
+    // Covers the whole combined action (profile save, if needed, through
+    // the on-chain transaction) under one submitting/button-label state,
+    // matching the single submit click that now triggers both.
     setSubmitting(true)
     try {
+      if (needsEmail) {
+        const savedProfile = await profileFormRef.current?.submit()
+        if (!savedProfile) return
+      }
+      if (!category) {
+        setError('Choose a category.')
+        return
+      }
+      if (!generalArea.trim() || generalArea.length > 120) {
+        setError("Add a general area (city or postcode) so renters considering pickup can judge distance. Not your exact address.")
+        return
+      }
+      if (itemName.length > 50) {
+        setError('Item name must be 50 characters or fewer.')
+        return
+      }
+      if (description.length > 1200) {
+        setError('Description must be 1200 characters or fewer.')
+        return
+      }
+      if (!photos || photos.length > 200) {
+        setError('A photos CID is required (200 characters or fewer).')
+        return
+      }
+      const rentalPriceLamports = solToLamports(Number(rentalPrice))
+      const depositAmountLamports = solToLamports(Number(depositAmount))
+      const estimatedValueLamports = solToLamports(Number(estimatedValue) || 0)
+      if (rentalPriceLamports <= 0) {
+        setError('Rental price must be greater than zero.')
+        return
+      }
+      if (depositAmountLamports <= 0) {
+        setError('Deposit must be greater than zero.')
+        return
+      }
+      if (needsEstimatedValue && estimatedValueLamports <= 0) {
+        setError('Estimated value is required for Rare or Antique items.')
+        return
+      }
+      if (needsEstimatedValue && depositExceedsCap) {
+        setError("Deposit can't exceed 45% of the item's estimated value for Rare or Antique items.")
+        return
+      }
+
       const { signature, listing } = await withTimeout(
         listItem(program, publicKey, {
           itemName,
@@ -209,10 +222,6 @@ export function ListItem() {
       if (!signingIn) void signIn()
       return
     }
-    if (needsEmail) {
-      setShowEmailStep(true)
-      return
-    }
     void handleSubmit()
   }
 
@@ -235,7 +244,7 @@ export function ListItem() {
       <div className="mb-10">
         <span
           className="mb-3 inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide"
-          style={{ background: 'rgba(255,107,53,0.12)', color: C.primary }}
+          style={{ background: C.accentSoft, color: C.primary }}
         >
           Sell on Grey Swan
         </span>
@@ -248,7 +257,7 @@ export function ListItem() {
       </div>
 
       {!connected && (
-        <div className="mb-8 rounded-xl p-4 text-sm" style={{ background: 'rgba(38,34,32,0.04)', border: `1px solid ${C.border}`, color: C.muted }}>
+        <div className="mb-8 rounded-xl p-4 text-sm" style={{ background: C.inputBg, border: `1px solid ${C.border}`, color: C.muted }}>
           Connect a wallet to create a listing.
         </div>
       )}
@@ -261,6 +270,37 @@ export function ListItem() {
           }}
           className="flex flex-col gap-6"
         >
+          {needsEmail && publicKey && token && (
+            <section className="rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+              <h2 className="mb-1 text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                Add your email to list items
+              </h2>
+              <p className="mb-4 text-xs leading-relaxed" style={{ color: C.faint }}>
+                Owners need an email on file so we can send rental notifications: confirmation deadlines, handover reminders, and deposit release updates.
+              </p>
+              <ProfileForm
+                ref={profileFormRef}
+                showNameField={!profile}
+                emailRequired
+                renderFormTag={false}
+                onSubmit={async (name, email) => {
+                  try {
+                    await saveProfile(publicKey.toBase58(), profile ? profile.name : name, email, token)
+                    refetch()
+                  } catch (err) {
+                    // A 401 here means this token is dead server-side (expired
+                    // despite passing the local check, or a session secret
+                    // rotation) — clear it so sign-in is required again instead
+                    // of leaving the person stuck resubmitting the same form
+                    // against the same bad token forever.
+                    if (err instanceof Error && (err as Error & { status?: number }).status === 401) clearSession()
+                    throw err
+                  }
+                }}
+              />
+            </section>
+          )}
+
           <section className="rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
             <h2 className="mb-4 text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
               Photos
@@ -419,46 +459,14 @@ export function ListItem() {
             </p>
           )}
 
-          {showEmailStep && publicKey && token ? (
-            <div className="rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-              <p className="mb-1 text-sm font-bold" style={{ color: C.cream }}>
-                Add your email to list items
-              </p>
-              <p className="mb-3 text-xs leading-relaxed" style={{ color: C.faint }}>
-                Owners need an email on file so we can send rental notifications: confirmation deadlines, handover reminders, and deposit release updates.
-              </p>
-              <ProfileForm
-                showNameField={!profile}
-                emailRequired
-                submitLabel="Continue listing"
-                onSubmit={async (name, email) => {
-                  try {
-                    await saveProfile(publicKey.toBase58(), profile ? profile.name : name, email, token)
-                    refetch()
-                    setShowEmailStep(false)
-                    await handleSubmit()
-                  } catch (err) {
-                    // A 401 here means this token is dead server-side (expired
-                    // despite passing the local check, or a session secret
-                    // rotation) — clear it so sign-in is required again instead
-                    // of leaving the person stuck resubmitting the same form
-                    // against the same bad token forever.
-                    if (err instanceof Error && (err as Error & { status?: number }).status === 401) clearSession()
-                    throw err
-                  }
-                }}
-              />
-            </div>
-          ) : (
-            <button
-              type="submit"
-              disabled={submitting || signingIn}
-              className="w-full rounded-2xl py-4 text-base font-bold transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
-              style={{ background: C.primary, color: C.onAccent, boxShadow: '0 4px 16px rgba(255,107,53,0.32)' }}
-            >
-              {submitButtonLabel}
-            </button>
-          )}
+          <button
+            type="submit"
+            disabled={submitting || signingIn}
+            className="w-full rounded-2xl py-4 text-base font-bold transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
+            style={{ background: C.primary, color: C.onAccent, boxShadow: '0 4px 16px rgba(255,107,53,0.32)' }}
+          >
+            {submitButtonLabel}
+          </button>
         </form>
 
         <div className="flex h-fit flex-col gap-4">

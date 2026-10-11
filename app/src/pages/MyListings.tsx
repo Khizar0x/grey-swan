@@ -2,8 +2,10 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey } from '@solana/web3.js'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { UnreadBadge } from '../components/atoms'
 import { IconCamera, IconCheck } from '../components/icons'
 import { RetryImage } from '../components/RetryImage'
+import { useAuthContext } from '../lib/AuthContext'
 import { formatSol } from '../lib/format'
 import { categoryColor, categoryLabel, enumKey } from '../lib/listing'
 import { removeListing } from '../lib/mutations'
@@ -12,11 +14,12 @@ import { usePhotoUrls } from '../lib/usePhotoUrls'
 import { rentalStatusLabel, rentalStatusStyle, type StatusStyle } from '../lib/rentalStatus'
 import { C, FONT_HEAD } from '../lib/theme'
 import { useListings, type ListingAccountEntry } from '../lib/useListings'
+import { useUnreadCounts } from '../lib/useUnreadCounts'
 import type { RentalAccountEntry } from '../lib/useRentals'
 import { useRentals } from '../lib/useRentals'
 import { withTimeout } from '../lib/withTimeout'
 
-const AVAILABLE_STYLE: StatusStyle = { background: 'rgba(22,163,74,0.10)', color: C.green, border: '1px solid rgba(22,163,74,0.22)' }
+const AVAILABLE_STYLE: StatusStyle = { background: 'var(--gs-badge-positive-bg)', color: C.green, border: '1px solid var(--gs-badge-positive-border)' }
 
 // A rental is "in progress" for this page's purposes if it hasn't reached a
 // terminal state yet — used to find the one active rental (if any) tied to
@@ -42,6 +45,7 @@ function PhotoPlaceholder({ loading }: { loading?: boolean }) {
 function ListingCard({
   listing,
   rental,
+  unread,
   removing,
   confirmingRemove,
   onConfirmRemove,
@@ -50,6 +54,7 @@ function ListingCard({
 }: {
   listing: ListingAccountEntry
   rental: RentalAccountEntry | undefined
+  unread: number
   removing: boolean
   confirmingRemove: boolean
   onConfirmRemove: () => void
@@ -64,7 +69,8 @@ function ListingCard({
   const statusKey = rental ? enumKey(rental.account.status) : null
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl transition-all hover:shadow-md" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+    <div className="relative flex flex-col overflow-hidden rounded-xl transition-all hover:shadow-md" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+      <UnreadBadge count={unread} />
       <Link to={`/listing/${pubkeyStr}`} className="relative block">
         {urls[0] ? (
           <div className="aspect-square overflow-hidden" style={{ background: C.surface2 }}>
@@ -172,6 +178,7 @@ function ListingCard({
 
 export function MyListings() {
   const { publicKey } = useWallet()
+  const { token } = useAuthContext()
   const program = useProgram()
   const { listings, loading: listingsLoading, error: listingsError, refetch } = useListings()
   const { rentals, loading: rentalsLoading } = useRentals()
@@ -188,6 +195,8 @@ export function MyListings() {
       activeRentalByListing.set(r.account.listing.toBase58(), r)
     }
   }
+
+  const unreadCounts = useUnreadCounts(Array.from(activeRentalByListing.values()).map((r) => r.publicKey.toBase58()), token)
 
   const activeCount = myListings.filter((l) => activeRentalByListing.has(l.publicKey.toBase58())).length
   const totalDepositHeld = myListings.reduce((sum, l) => {
@@ -270,6 +279,7 @@ export function MyListings() {
               key={pubkeyStr}
               listing={l}
               rental={rental}
+              unread={rental ? unreadCounts.get(rental.publicKey.toBase58()) ?? 0 : 0}
               removing={removing === pubkeyStr}
               confirmingRemove={confirmingRemove === pubkeyStr}
               onConfirmRemove={() => setConfirmingRemove(pubkeyStr)}
@@ -280,7 +290,7 @@ export function MyListings() {
         })}
       </div>
 
-      <div className="mt-8 flex items-center gap-4 rounded-2xl p-5" style={{ background: 'rgba(38,34,32,0.03)', border: `1px solid ${C.border}` }}>
+      <div className="mt-8 flex items-center gap-4 rounded-2xl p-5" style={{ background: C.subtleBg, border: `1px solid ${C.border}` }}>
         <svg className="h-5 w-5 shrink-0" style={{ color: C.gold }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
         </svg>

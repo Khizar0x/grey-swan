@@ -38,8 +38,8 @@ function disputePathLabel(kind: Record<string, object>): string {
 // of rentalStatus.ts's public status list (see CLAUDE.md scope), but styled
 // with the same three-tint badge system so it looks native to the app.
 const REVIEW_STYLE: Record<DisputeReviewStatus, { background: string; color: string; border: string }> = {
-  under_review: { background: 'rgba(201,162,62,0.10)', color: '#B5893A', border: '1px solid rgba(201,162,62,0.22)' },
-  resolved: { background: 'rgba(22,163,74,0.10)', color: C.green, border: '1px solid rgba(22,163,74,0.22)' },
+  under_review: { background: 'var(--gs-badge-pending-bg)', color: 'var(--gs-badge-pending-color)', border: '1px solid var(--gs-badge-pending-border)' },
+  resolved: { background: 'var(--gs-badge-positive-bg)', color: C.green, border: '1px solid var(--gs-badge-positive-border)' },
 }
 const REVIEW_LABEL: Record<DisputeReviewStatus, string> = {
   under_review: 'Under review',

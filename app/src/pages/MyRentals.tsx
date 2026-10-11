@@ -1,11 +1,14 @@
 import { useWallet } from '@solana/wallet-adapter-react'
 import { Link } from 'react-router-dom'
+import { UnreadBadge } from '../components/atoms'
 import { IconCamera, IconEye } from '../components/icons'
 import { RetryImage } from '../components/RetryImage'
+import { useAuthContext } from '../lib/AuthContext'
 import { formatSol } from '../lib/format'
 import { categoryColor, categoryLabel } from '../lib/listing'
 import { rentalStatusLabel, rentalStatusStyle } from '../lib/rentalStatus'
 import { C, FONT_HEAD } from '../lib/theme'
+import { useUnreadCounts } from '../lib/useUnreadCounts'
 import type { ListingAccountEntry } from '../lib/useListings'
 import { useListingsByKeys } from '../lib/useListingsByKeys'
 import { usePhotoUrls } from '../lib/usePhotoUrls'
@@ -24,12 +27,13 @@ function PhotoPlaceholder({ loading }: { loading?: boolean }) {
 
 // Same card language as ListingCard.tsx (homepage) and MyListings.tsx — a
 // rental is still "an item in the marketplace," just one already in hand.
-function RentalCard({ rental, listing }: { rental: RentalAccountEntry; listing: ListingAccountEntry['account'] | undefined }) {
+function RentalCard({ rental, listing, unread }: { rental: RentalAccountEntry; listing: ListingAccountEntry['account'] | undefined; unread: number }) {
   const { urls, loading: photosLoading } = usePhotoUrls(listing?.photos)
   const style = rentalStatusStyle(rental.account.status)
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl transition-all hover:shadow-md" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+    <div className="relative flex flex-col overflow-hidden rounded-xl transition-all hover:shadow-md" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+      <UnreadBadge count={unread} />
       <Link to={`/rental/${rental.publicKey.toBase58()}`} className="relative block">
         {urls[0] ? (
           <div className="aspect-square overflow-hidden" style={{ background: C.surface2 }}>
@@ -84,10 +88,12 @@ function RentalCard({ rental, listing }: { rental: RentalAccountEntry; listing: 
 
 export function MyRentals() {
   const { publicKey } = useWallet()
+  const { token } = useAuthContext()
   const { rentals, loading, error } = useRentals()
 
   const mine = publicKey ? rentals.filter((r) => r.account.renter.equals(publicKey)) : []
   const listingsMap = useListingsByKeys(mine.map((r) => r.account.listing))
+  const unreadCounts = useUnreadCounts(mine.map((r) => r.publicKey.toBase58()), token)
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
@@ -121,7 +127,12 @@ export function MyRentals() {
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {mine.map((r) => (
-          <RentalCard key={r.publicKey.toBase58()} rental={r} listing={listingsMap.get(r.account.listing.toBase58())} />
+          <RentalCard
+            key={r.publicKey.toBase58()}
+            rental={r}
+            listing={listingsMap.get(r.account.listing.toBase58())}
+            unread={unreadCounts.get(r.publicKey.toBase58()) ?? 0}
+          />
         ))}
       </div>
     </div>
