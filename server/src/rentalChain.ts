@@ -54,3 +54,58 @@ export async function fetchRentalSummary(rentalPubkey: string): Promise<OnChainR
 
   return { owner, renter, isCompleted: status === RENTAL_STATUS_COMPLETED, currentPhase, status, depositLamports }
 }
+
+export interface RentalDetail extends OnChainRentalSummary {
+  listing: string
+  phase1Photos: string
+  phase2Photos: string
+  phase3Photos: string
+  phase4Photos: string
+  // DisputeKind discriminant (state.rs): 0 None, 1 ReturnIssue, 2 ArrivalIssue,
+  // 3 NotReturned, 4 AdminOpened, 5 ReturnNotReceived.
+  disputeKind: number
+}
+
+// Reads Rental's variable-length tail (the photo manifest CIDs) on top of the
+// fixed fields above. Layout after current_phase (byte 139): phase1_photos,
+// outbound_tracking, phase2_photos, phase3_photos, return_tracking,
+// phase4_photos (each a u32 length then UTF-8 bytes), dispute_kind (u8).
+export function parseRentalDetail(data: Buffer): RentalDetail {
+  const owner = new PublicKey(data.subarray(40, 72)).toBase58()
+  const renter = new PublicKey(data.subarray(72, 104)).toBase58()
+  const status = data[138]
+  let offset = 140
+  const readString = () => {
+    const len = data.readUInt32LE(offset)
+    const value = data.subarray(offset + 4, offset + 4 + len).toString('utf8')
+    offset += 4 + len
+    return value
+  }
+  const phase1Photos = readString()
+  readString() // outbound_tracking
+  const phase2Photos = readString()
+  const phase3Photos = readString()
+  readString() // return_tracking
+  const phase4Photos = readString()
+  const disputeKind = data[offset]
+  return {
+    owner,
+    renter,
+    isCompleted: status === RENTAL_STATUS_COMPLETED,
+    currentPhase: data[139],
+    status,
+    depositLamports: Number(data.readBigUInt64LE(122)),
+    listing: new PublicKey(data.subarray(8, 40)).toBase58(),
+    phase1Photos,
+    phase2Photos,
+    phase3Photos,
+    phase4Photos,
+    disputeKind,
+  }
+}
+
+export async function fetchRentalDetail(rentalPubkey: string): Promise<RentalDetail | null> {
+  const info = await connection.getAccountInfo(new PublicKey(rentalPubkey))
+  if (!info || !info.owner.equals(PROGRAM_ID)) return null
+  return parseRentalDetail(info.data)
+}
