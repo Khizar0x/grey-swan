@@ -76,7 +76,7 @@ interface Staged {
   ownerClaimArea: Area
   findingOver: Partial<JudgeFinding>
   textInImage?: boolean
-  depositPence?: number
+  depositLamports?: number
 }
 
 const baseSpecs = (crackFrom: PhaseKey | null, opts: { p1Left?: boolean } = {}): PhotoSpec[] => {
@@ -127,7 +127,7 @@ export async function buildStagedCases(dir: string): Promise<CaseFile[]> {
     }
     const claim = crackClaim(st.ownerClaimArea)
     const cf: CaseFile = {
-      caseId: st.caseId, depositPence: st.depositPence ?? 15_000, photos,
+      caseId: st.caseId, depositLamports: st.depositLamports ?? 1_500_000_000, photos,
       owner: { answers: st.ownerAnswers, statement: st.ownerStatement },
       renter: { answers: { item_damaged: 'yes', where: 'front', what: 'crack' }, statement: st.renterStatement },
       mock: {

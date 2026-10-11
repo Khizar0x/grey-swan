@@ -23,7 +23,7 @@ export async function getCase(name: string): Promise<CaseFile> {
 
 export const testConfig = (over: Partial<AiConfig> = {}): AiConfig => ({
   mode: 'mock', modelA: 'model-a', modelB: 'model-b', dailyLiveCap: 40, dbPath: ':memory:',
-  depositThresholdPence: 50_000, auditRate: 0, apiKey: undefined, secret: TEST_SECRET, ...over,
+  largeDepositThresholdLamports: 5_000_000_000, auditRate: 0, apiKey: undefined, secret: TEST_SECRET, ...over,
 })
 
 export interface RunOpts {

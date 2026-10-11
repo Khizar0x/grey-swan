@@ -81,12 +81,17 @@ export async function runCase(caseFile: CaseFile, deps: PipelineDeps): Promise<P
       for (const slot of ['A', 'B'] as const) {
         for (const run of [0, 1]) judges.push(await judge(ctx, slot, run, claims, blinds[slot]))
       }
-      for (const j of judges) for (const f of j.findings) reasoning.push(`[${f.area}] ${f.reasoning}`)
+      // Reasoning and anything outside the claimed areas: notes for humans only.
+      const claimed = new Set(o.claims.filter((c) => c.stance === 'damage_present').map((c) => c.area))
+      for (const j of judges) {
+        for (const f of j.findings) reasoning.push(claimed.has(f.area) ? `[${f.area}] ${f.reasoning}` : `[note, unclaimed ${f.area}, tier ${f.tier}] ${f.reasoning}`)
+        for (const n of j.other_notes) reasoning.push(`[note, ${n.area}] ${n.note}`)
+      }
 
       decision = route({
-        caseId: caseFile.caseId, depositPence: caseFile.depositPence, ownerClaims: o.claims,
+        caseId: caseFile.caseId, depositLamports: caseFile.depositLamports, ownerClaims: o.claims,
         injectionSignals: extractorSignals, blinds: [blinds.A, blinds.B], judges,
-        depositThresholdPence: config.depositThresholdPence, auditRate: config.auditRate,
+        largeDepositThresholdLamports: config.largeDepositThresholdLamports, auditRate: config.auditRate,
         walletRisk: await (deps.hooks ?? noRiskHooks).walletDisputeHistory(caseFile),
         linkedWallets: await (deps.hooks ?? noRiskHooks).linkedWallets(caseFile),
       })

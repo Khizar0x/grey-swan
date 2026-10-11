@@ -46,7 +46,7 @@ export interface MockScript {
 
 export interface CaseFile {
   caseId: string
-  depositPence: number
+  depositLamports: number // JS number is exact up to ~9e15 lamports (9M SOL)
   photos: CasePhoto[]
   owner: PartyInput
   renter: PartyInput
@@ -102,8 +102,13 @@ export const findingSchema = z.strictObject({
 })
 export type JudgeFinding = z.infer<typeof findingSchema>
 
+// Anything the judge saw outside the owner's claimed areas. Notes for human
+// reviewers only; never part of the agreement check or the verdict.
+export const noteSchema = z.strictObject({ area, note: z.string().max(300) })
+
 export const judgeSchema = z.strictObject({
   findings: z.array(findingSchema).max(8),
+  other_notes: z.array(noteSchema).max(8),
   injection_detected: z.boolean(),
 })
 export type Judge = z.infer<typeof judgeSchema>

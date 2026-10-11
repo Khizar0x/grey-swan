@@ -82,10 +82,13 @@ test('route: tier above FunctionalDamage', async () => {
     assert.match(reasonsOf(r), /above the auto-release cap/)
   }
 })
-test('route: deposit above threshold', async () => {
+test('route: deposit above the large-deposit threshold (lamports, equal is allowed like the contract)', async () => {
   const c = await getCase('honest_crack')
-  c.depositPence = 60_000
+  c.depositLamports = 5_000_000_000
+  assert.equal((await run(c)).decision.kind, 'POST_VERDICT')
+  c.depositLamports = 5_000_000_001
   assert.match(reasonsOf(await run(c)), /deposit above/)
+  assert.equal((await run(c, { config: { largeDepositThresholdLamports: 6_000_000_000 } })).decision.kind, 'POST_VERDICT')
 })
 test('route: random audit (rate 1 always, rate 0 never)', async () => {
   const c = await getCase('honest_crack')
@@ -98,9 +101,30 @@ test('route: wallet history and linked wallet stub hooks', async () => {
   assert.match(reasonsOf(await run(c, { hooks: { walletDisputeHistory: yes, linkedWallets: no } })), /wallet dispute history/)
   assert.match(reasonsOf(await run(c, { hooks: { walletDisputeHistory: no, linkedWallets: yes } })), /linked wallets/)
 })
-test('route: damage the owner did not claim does not count and goes to a human', async () => {
-  const r = await run(await getCase('honest_crack'), { mutate: judgeEdit((j) => { j.findings.push({ ...j.findings[0], area: 'back', tier: 1 }) }) })
-  assert.match(reasonsOf(r), /did not claim/)
+test('unclaimed findings never count, never block, and are kept as notes for humans', async () => {
+  // even a "major" unclaimed finding changes nothing about the verdict
+  const r = await run(await getCase('honest_crack'), { mutate: judgeEdit((j) => { j.findings.push({ ...j.findings[0], area: 'back', tier: 4, reasoning: 'odd dent at back' }) }) })
+  assert.deepEqual((r.decision as any).tiers, [2])
+  assert.deepEqual((r.decision as any).areas, ['front'])
+  assert.match(r.store.listVerdicts()[0].reasoning, /\[note, unclaimed back, tier 4\] odd dent at back/)
+})
+test('other_notes are kept for humans and ignored by the decision', async () => {
+  const r = await run(await getCase('honest_crack'), { mutate: judgeEdit((j) => { j.other_notes = [{ area: 'left', note: 'faint scuff, maybe old' }] }) })
+  assert.equal(r.decision.kind, 'POST_VERDICT')
+  assert.match(r.store.listVerdicts()[0].reasoning, /\[note, left\] faint scuff/)
+})
+test('models disagreeing only about unclaimed areas do not block (the live-run failure)', async () => {
+  const r = await run(await getCase('honest_crack'), {
+    mutate: judgeEdit((j, req) => {
+      if (req.meta.slot === 'A' && req.runIndex === 0) j.findings.push({ ...j.findings[0], area: 'left', tier: 1, item_identity_confirmed: false, confidence: 'low' })
+      if (req.meta.slot === 'B') j.other_notes = [{ area: 'top', note: 'x' }]
+    }),
+  })
+  assert.equal(r.decision.kind, 'POST_VERDICT')
+})
+test('disagreement about a claimed area still blocks even if unclaimed findings are added', async () => {
+  const r = await run(await getCase('honest_crack'), { mutate: judgeEdit((j, req) => { if (req.meta.slot === 'B') j.findings[0].tier = 1 }) })
+  assert.match(reasonsOf(r), /disagreement/)
 })
 test('route: owner claim not assessed / no findings', async () => {
   const r = await run(await getCase('honest_crack'), { mutate: judgeEdit((j) => { j.findings = [] }) })

@@ -20,7 +20,7 @@ export function scriptedMock(caseFile: CaseFile): LlmClient {
       } else if (req.kind === 'blind') {
         out = { entries: m.blind, text_in_photos: m.textInImage ?? false }
       } else {
-        out = { findings: m.findings, injection_detected: false }
+        out = { findings: m.findings, other_notes: [], injection_detected: false }
       }
       return { text: JSON.stringify(out) }
     },

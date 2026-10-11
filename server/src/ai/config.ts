@@ -9,7 +9,11 @@ export interface AiConfig {
   modelB: string
   dailyLiveCap: number
   dbPath: string
-  depositThresholdPence: number
+  // Mirrors Config.large_deposit_threshold_lamports (contract default 5 SOL). The
+  // contract auto-releases only when deposit <= threshold. In production this
+  // should be READ from the on-chain Config account (the admin can change it
+  // with update_config); this env value is a local stand-in.
+  largeDepositThresholdLamports: number
   auditRate: number // 0..1, share of otherwise-clean cases sent to a human anyway
   apiKey: string | undefined
   secret: string | undefined // seeds the per-request delimiter and canary
@@ -26,7 +30,8 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     modelB: env.AI_MODEL_B || 'claude-sonnet-5-5',
     dailyLiveCap: Number(env.AI_DAILY_LIVE_CAP) > 0 ? Number(env.AI_DAILY_LIVE_CAP) : 40,
     dbPath: env.AI_DB_PATH || path.join(here, '..', '..', 'data', 'greyswan.db'),
-    depositThresholdPence: Number(env.AI_DEPOSIT_THRESHOLD_PENCE) > 0 ? Number(env.AI_DEPOSIT_THRESHOLD_PENCE) : 50_000,
+    largeDepositThresholdLamports:
+      Number(env.AI_LARGE_DEPOSIT_THRESHOLD_LAMPORTS) > 0 ? Number(env.AI_LARGE_DEPOSIT_THRESHOLD_LAMPORTS) : 5_000_000_000,
     auditRate: env.AI_AUDIT_RATE !== undefined ? Number(env.AI_AUDIT_RATE) : 0.1,
     apiKey: env.ANTHROPIC_API_KEY || undefined,
     secret: env.AI_SECRET || undefined,

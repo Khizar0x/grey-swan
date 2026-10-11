@@ -7,8 +7,12 @@ import {
 // Every field a decision could depend on. Reasoning text and confidence are
 // deliberately absent: reasoning is for humans only, and confidence is a
 // routing input (any "low" escalates) rather than something that must match.
-export function decisionKey(j: Judge): string {
-  const rows = [...j.findings]
+// Only findings for areas the owner claimed take part: unclaimed damage never
+// counts toward the verdict, so models disagreeing about it is not a reason to stop.
+export const claimedFindings = (j: Judge, claimed: Set<Area>): JudgeFinding[] => j.findings.filter((f) => claimed.has(f.area))
+
+export function decisionKey(j: Judge, claimed: Set<Area>): string {
+  const rows = claimedFindings(j, claimed)
     .sort((a, b) => a.area.localeCompare(b.area))
     .map((f) =>
       [
@@ -21,12 +25,12 @@ export function decisionKey(j: Judge): string {
 
 export interface RouteInput {
   caseId: string
-  depositPence: number
+  depositLamports: number
   ownerClaims: Claim[]
   injectionSignals: string[] // sanitiser / heuristic / extractor flags, already collected
   blinds: Blind[] // one per model
   judges: Judge[] // all runs of all models
-  depositThresholdPence: number
+  largeDepositThresholdLamports: number
   auditRate: number
   walletRisk: boolean
   linkedWallets: boolean
@@ -47,16 +51,16 @@ export function route(input: RouteInput): Decision {
   if (input.blinds.some((b) => b.text_in_photos)) human('injection signal: text found inside a photo')
   if (input.judges.some((j) => j.injection_detected || j.findings.some((f) => f.injection_detected))) human('injection signal: judge flagged injection')
 
+  const claimedAreas = new Set<Area>(input.ownerClaims.filter((c) => c.stance === 'damage_present').map((c) => c.area))
+
   if (input.judges.length === 0) human('no judge output')
   else {
-    // runs and models must agree exactly
-    const keys = new Set(input.judges.map(decisionKey))
+    // runs and models must agree exactly, on the claimed areas
+    const keys = new Set(input.judges.map((j) => decisionKey(j, claimedAreas)))
     if (keys.size > 1) human('disagreement between runs or models')
   }
 
-  const j = input.judges[0]
-  const findings: JudgeFinding[] = j ? j.findings : []
-  const claimedAreas = new Set<Area>(input.ownerClaims.filter((c) => c.stance === 'damage_present').map((c) => c.area))
+  const findings: JudgeFinding[] = input.judges[0] ? claimedFindings(input.judges[0], claimedAreas) : []
 
   if (claimedAreas.size === 0) human('owner made no damage claim')
   if (findings.length === 0) human('no findings')
@@ -77,7 +81,6 @@ export function route(input: RouteInput): Decision {
     if (!f.earlier_photos_covered_area && claimedAreas.has(f.area)) human(`uncovered area: no earlier photo of ${f.area}`)
     if (!f.item_identity_confirmed) human(`item identity not confirmed (${f.area})`)
     if (f.claim_status === 'unverifiable' && claimedAreas.has(f.area)) human(`claim on ${f.area} cannot be verified from photos`)
-    if (f.tier > 0 && !claimedAreas.has(f.area)) human(`damage seen in ${f.area} that the owner did not claim`)
   }
   for (const c of input.ownerClaims) {
     if (c.stance === 'damage_present' && NON_VISUAL.includes(c.damage_type)) human(`main claim (${c.damage_type}) cannot be judged from photos`)
@@ -85,7 +88,7 @@ export function route(input: RouteInput): Decision {
 
   const maxTier = Math.max(0, ...findings.map((f) => f.tier))
   if (maxTier > AUTO_RELEASE_MAX_TIER) human(`tier ${maxTier} is above the auto-release cap`)
-  if (input.depositPence > input.depositThresholdPence) human('deposit above the auto-release threshold')
+  if (input.depositLamports > input.largeDepositThresholdLamports) human('deposit above the large-deposit threshold')
   if (auditSelected(input.caseId, input.auditRate)) human('random audit')
   if (input.walletRisk) human('wallet dispute history flagged')
   if (input.linkedWallets) human('linked wallets flagged')
@@ -94,6 +97,6 @@ export function route(input: RouteInput): Decision {
 
   // Damage only counts when the owner claimed it AND the photos support it.
   const ordered = [...findings].sort((a, b) => AREAS.indexOf(a.area) - AREAS.indexOf(b.area))
-  const tiers = ordered.map((f) => (claimedAreas.has(f.area) && f.claim_status === 'supported' && f.photo_ids_now.length > 0 ? f.tier : 0))
+  const tiers = ordered.map((f) => (f.claim_status === 'supported' && f.photo_ids_now.length > 0 ? f.tier : 0))
   return { kind: 'POST_VERDICT', tiers, areas: ordered.map((f) => f.area), reasons: ['all checks passed'] }
 }

@@ -39,6 +39,10 @@ test('tier above 0 without photo evidence is rejected; duplicate areas rejected'
   assert.match(reasonsOf(await run(await getCase('honest_crack'), { mutate: onJudge((j) => { j.findings[0].photo_ids_now = [] }) })), /invalid_output/)
   assert.match(reasonsOf(await run(await getCase('honest_crack'), { mutate: onJudge((j) => { j.findings.push({ ...j.findings[0] }) }) })), /invalid_output/)
 })
+test('other_notes is required and strict', async () => {
+  await bad('missing', (_r, t) => t.replace('"other_notes":[],', ''), 'judge')
+  await bad('extra field', (_r, t) => t.replace('"other_notes":[]', '"other_notes":[{"area":"left","note":"x","tier":3}]'), 'judge')
+})
 test('unknown enum values are rejected', async () => {
   assert.match(reasonsOf(await run(await getCase('honest_crack'), { mutate: onJudge((j) => { j.findings[0].area = 'roof' }) })), /invalid_output/)
   assert.match(reasonsOf(await run(await getCase('honest_crack'), { mutate: (req, v) => { if (req.kind === 'extract') v.claims[0].damage_type = 'melted'; return v } })), /invalid_output/)

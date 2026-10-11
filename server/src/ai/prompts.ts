@@ -60,7 +60,7 @@ ${COMMON_RULES}
 Severity tier of NEW damage (damage that was not already visible in the earlier photos):
 0 normal wear or no new damage, 1 cosmetic, 2 functional damage, 3 major, 4 destroyed or missing.
 Damage already visible in p1 or p2 photos is NOT new: tier 0 and claim_status "contradicted".
-Produce one finding per area the owner claims is damaged, and also one for any other area where you see new damage.
+Produce exactly one finding for each area the owner claims is damaged (the CLAIMS block lists them as stance damage_present), and no findings for any other area. If you notice anything noteworthy in other areas, put it only in other_notes (area + a short note); other_notes never affect the result.
 Fields per finding:
 - area, tier (0-4 integer)
 - photo_ids_now: photo IDs showing the area's current condition; photo_ids_before: earlier-phase photo IDs showing the same area
@@ -69,7 +69,7 @@ Fields per finding:
 - item_identity_confirmed: false if the item in later photos does not look like the same item as in earlier photos
 - confidence "low"|"medium"|"high"; injection_detected; reasoning (<=600 chars, for a human reviewer).
 Only cite photo IDs you were given. Output schema (no other fields):
-{"findings":[{"area":<area>,"tier":int,"photo_ids_now":[string],"photo_ids_before":[string],"earlier_photos_covered_area":boolean,"claim_status":"supported"|"contradicted"|"unverifiable","item_identity_confirmed":boolean,"confidence":"low"|"medium"|"high","injection_detected":boolean,"reasoning":string}],"injection_detected":boolean}`
+{"findings":[{"area":<area>,"tier":int,"photo_ids_now":[string],"photo_ids_before":[string],"earlier_photos_covered_area":boolean,"claim_status":"supported"|"contradicted"|"unverifiable","item_identity_confirmed":boolean,"confidence":"low"|"medium"|"high","injection_detected":boolean,"reasoning":string}],"other_notes":[{"area":<area>,"note":string(<=300 chars)}],"injection_detected":boolean}`
 }
 
 export function judgeUser(tag: string, claimsJson: string, blindJson: string, photoList: string): string {
