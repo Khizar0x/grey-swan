@@ -15,25 +15,28 @@ import './index.css'
 import { AuthProvider } from './lib/AuthContext.tsx'
 import { ProfileProvider } from './lib/ProfileContext.tsx'
 import { SavedAreaProvider } from './lib/SavedAreaContext.tsx'
+import { ThemeProvider } from './lib/ThemeContext.tsx'
 import { WalletContextProvider } from './lib/WalletContextProvider.tsx'
 import { WalletModalProvider } from './lib/WalletModalContext.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {/* Independent of wallet/auth entirely — a saved area works for anyone
-        browsing, no connection required. */}
-    <SavedAreaProvider>
-      <WalletContextProvider>
-        <AuthProvider>
-          <ProfileProvider>
-            <WalletModalProvider>
-              <BrowserRouter>
-                <App />
-              </BrowserRouter>
-            </WalletModalProvider>
-          </ProfileProvider>
-        </AuthProvider>
-      </WalletContextProvider>
-    </SavedAreaProvider>
+    {/* Independent of wallet/auth entirely — a saved area (and the theme
+        choice) work for anyone browsing, no connection required. */}
+    <ThemeProvider>
+      <SavedAreaProvider>
+        <WalletContextProvider>
+          <AuthProvider>
+            <ProfileProvider>
+              <WalletModalProvider>
+                <BrowserRouter>
+                  <App />
+                </BrowserRouter>
+              </WalletModalProvider>
+            </ProfileProvider>
+          </AuthProvider>
+        </WalletContextProvider>
+      </SavedAreaProvider>
+    </ThemeProvider>
   </StrictMode>,
 )
