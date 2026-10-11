@@ -353,7 +353,7 @@ export function RentalHandover() {
     )
 
   if (statusKey === 'disputed') {
-    return <DisputedView rentalPubkey={pubkey} rental={rental} token={token} isOwner={isOwner} isRenter={isRenter} />
+    return <DisputedView program={program} onRun={(fn) => void runMutation(fn)} busy={busy} error={error} rentalPubkey={pubkey} rental={rental} token={token} isOwner={isOwner} isRenter={isRenter} />
   }
 
   if (statusKey === 'completed' || statusKey === 'resolved' || statusKey === 'refundedAuto') {

@@ -1,22 +1,40 @@
+import type { Program } from '@coral-xyz/anchor'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { PublicKey } from '@solana/web3.js'
 import { useCallback, useEffect, useState } from 'react'
+import type { Greyswan } from '../idl/greyswan.ts'
 import { type DisputeAnswers, fetchDisputeAnswers, type OwnerAnswers, type RenterAnswers, saveDisputeAnswers } from '../lib/disputeAnswersApi'
 import { enumKey } from '../lib/listing'
+import { appeal, expireAppeal, finalizeVerdict } from '../lib/mutations'
 import { C, FONT_HEAD } from '../lib/theme'
+import { useDispute } from '../lib/useDispute'
+import { useNow } from '../lib/useNow'
 import type { RentalAccountEntry } from '../lib/useRentals'
 import { DisputeAnswersSummary } from './DisputeAnswersSummary'
 import { MessagesEntryRow } from './MessagesEntryRow'
 import { OwnerDisputeForm } from './OwnerDisputeForm'
 import { RenterDisputeResponse } from './RenterDisputeResponse'
+import { VerdictPanel } from './VerdictPanel'
 
 // The screen for a rental that is in review: what was reported, what each
 // side said, and the replies still owed.
 export function DisputedView({
+  program,
+  onRun,
+  busy,
+  error,
   rentalPubkey,
   rental,
   token,
   isOwner,
   isRenter,
 }: {
+  program: Program<Greyswan>
+  // The page's own mutation runner: it guards double submits and re-reads
+  // the rental afterwards.
+  onRun: (fn: () => Promise<unknown>) => void
+  busy: boolean
+  error: string | null
   rentalPubkey: string
   rental: RentalAccountEntry['account']
   token: string | null
@@ -24,6 +42,9 @@ export function DisputedView({
   isRenter: boolean
 }) {
   const isParty = isOwner || isRenter
+  const { publicKey } = useWallet()
+  const now = useNow(15_000)
+  const disputeState = useDispute(program, rentalPubkey, rental)
   const isDamageReport = enumKey(rental.disputeKind) === 'returnIssue'
 
   const [answers, setAnswers] = useState<DisputeAnswers | null>(null)
@@ -62,6 +83,14 @@ export function DisputedView({
     [rentalPubkey, token],
   )
 
+  const runVerdictAction = (action: 'appeal' | 'release') => {
+    if (!publicKey) return
+    const rentalKey = new PublicKey(rentalPubkey)
+    if (action === 'appeal') return onRun(() => appeal(program, rentalKey, publicKey))
+    const settle = disputeState.dispute && enumKey(disputeState.dispute.status) === 'appealed' ? expireAppeal : finalizeVerdict
+    onRun(() => settle(program, rental.listing, rentalKey, rental.owner, rental.renter, publicKey))
+  }
+
   const ownerMissing = isOwner && isDamageReport && answers !== null && !answers.owner
   const renterCanRespond = isRenter && isDamageReport && answers !== null && !!answers.owner && !answers.renter
 
@@ -85,6 +114,21 @@ export function DisputedView({
         {loadError && (
           <p className="text-sm" style={{ color: C.rust }}>
             {loadError}
+          </p>
+        )}
+        <VerdictPanel
+          state={disputeState}
+          deposit={BigInt(rental.depositAmount.toString())}
+          isOwner={isOwner}
+          isRenter={isRenter}
+          canSign={!!publicKey}
+          now={now}
+          busy={busy}
+          onAction={runVerdictAction}
+        />
+        {error && (
+          <p className="text-sm" style={{ color: C.rust }}>
+            {error}
           </p>
         )}
         {answers && <DisputeAnswersSummary answers={answers} />}
