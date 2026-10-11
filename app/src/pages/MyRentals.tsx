@@ -83,9 +83,9 @@ function RentalCard({ rental, listing, unread }: { rental: RentalAccountEntry; l
       : `1px solid ${C.border}`
 
   const shadowStyle = isDisputed
-    ? '0 0 0 1px var(--gs-badge-attention-border), 0 4px 16px rgba(184, 92, 66, 0.08)'
+    ? C.shadowAttention
     : needsAction
-      ? '0 0 0 1px var(--gs-badge-pending-border), 0 4px 16px rgba(201, 162, 62, 0.12)'
+      ? C.shadowPending
       : undefined
 
   return (
@@ -163,7 +163,7 @@ function RentalCard({ rental, listing, unread }: { rental: RentalAccountEntry; l
         {listing && (
           <span
             className="absolute left-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-            style={{ background: categoryColor(listing.category), color: '#FFFFFF' }}
+            style={{ background: categoryColor(listing.category), color: C.overlayText }}
           >
             {categoryLabel(listing.category)}
           </span>
@@ -339,7 +339,7 @@ export function MyRentals() {
                 className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all"
                 style={{
                   background: filter === 'action' ? 'var(--gs-badge-pending-color)' : 'var(--gs-badge-pending-bg)',
-                  color: filter === 'action' ? '#FFFFFF' : 'var(--gs-badge-pending-color)',
+                  color: filter === 'action' ? C.overlayText : 'var(--gs-badge-pending-color)',
                   border: '1px solid var(--gs-badge-pending-border)',
                 }}
               >

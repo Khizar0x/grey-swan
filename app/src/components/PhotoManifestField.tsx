@@ -238,7 +238,7 @@ export function PhotoManifestField({
                   disabled={uploading}
                   title="Remove cover photo"
                   className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold shadow-sm transition-transform hover:scale-110 disabled:opacity-50"
-                  style={{ background: 'rgba(0,0,0,0.65)', color: '#FFFFFF' }}
+                  style={{ background: C.overlayBg, color: C.overlayText }}
                 >
                   ×
                 </button>
@@ -261,7 +261,7 @@ export function PhotoManifestField({
                       />
                       <span
                         className="absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                        style={{ background: 'rgba(0,0,0,0.5)', color: '#FFFFFF' }}
+                        style={{ background: C.overlayBg, color: C.overlayText }}
                       >
                         #{actualIndex + 1}
                       </span>
@@ -271,7 +271,7 @@ export function PhotoManifestField({
                         disabled={uploading}
                         title="Remove photo"
                         className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold transition-transform hover:scale-110 disabled:opacity-50"
-                        style={{ background: 'rgba(0,0,0,0.65)', color: '#FFFFFF' }}
+                        style={{ background: C.overlayBg, color: C.overlayText }}
                       >
                         ×
                       </button>
@@ -365,7 +365,7 @@ export function PhotoManifestField({
                 disabled={uploading}
                 title="Remove photo"
                 className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold disabled:opacity-50"
-                style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}
+                style={{ background: C.overlayBg, color: C.overlayText }}
               >
                 ×
               </button>

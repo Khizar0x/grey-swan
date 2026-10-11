@@ -66,6 +66,11 @@ body {
   --gs-badge-attention-border: rgba(184, 92, 66, 0.22);
   --gs-badge-neutral-bg: rgba(38, 34, 32, 0.06);
   --gs-badge-neutral-border: rgba(38, 34, 32, 0.12);
+  --gs-overlay-bg: rgba(0, 0, 0, 0.65);
+  --gs-overlay-text: #ffffff;
+  --gs-primary-glow: 0 4px 16px rgba(255, 107, 53, 0.32);
+  --gs-shadow-attention: 0 0 0 1px var(--gs-badge-attention-border), 0 4px 16px rgba(184, 92, 66, 0.08);
+  --gs-shadow-pending: 0 0 0 1px var(--gs-badge-pending-border), 0 4px 16px rgba(201, 162, 62, 0.12);
 }
 
 :root[data-theme='dark'] {
@@ -104,4 +109,9 @@ body {
   --gs-badge-attention-border: rgba(217, 137, 109, 0.32);
   --gs-badge-neutral-bg: rgba(255, 255, 255, 0.06);
   --gs-badge-neutral-border: rgba(255, 255, 255, 0.12);
+  --gs-overlay-bg: rgba(0, 0, 0, 0.75);
+  --gs-overlay-text: #ece9e6;
+  --gs-primary-glow: 0 4px 16px rgba(255, 122, 82, 0.28);
+  --gs-shadow-attention: 0 0 0 1px var(--gs-badge-attention-border), 0 4px 16px rgba(217, 137, 109, 0.14);
+  --gs-shadow-pending: 0 0 0 1px var(--gs-badge-pending-border), 0 4px 16px rgba(245, 196, 96, 0.15);
 }

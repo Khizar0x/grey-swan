@@ -4,6 +4,7 @@ import { PublicKey } from '@solana/web3.js'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { SuccessPill } from '../components/atoms'
+import { IconCamera } from '../components/icons'
 import { ProfileForm, type ProfileFormHandle } from '../components/ProfileForm'
 import { RetryImage } from '../components/RetryImage'
 import { fetchLatestRenterAddress, saveAddress } from '../lib/addressApi'
@@ -11,7 +12,7 @@ import { useAuthContext } from '../lib/AuthContext'
 import { type DeliveryMethod, saveDeliveryMethod } from '../lib/deliveryApi'
 import { formatSol } from '../lib/format'
 import { fetchListingArea } from '../lib/listingAreaApi'
-import { categoryLabel, rarityLabel, enumKey, isVirtualCategory } from '../lib/listing'
+import { categoryColor, categoryLabel, rarityLabel, enumKey, isVirtualCategory } from '../lib/listing'
 import { geocodeAddress, geocodeArea, haversineDistanceKm, MAPBOX_TOKEN } from '../lib/mapbox'
 import { rentItem } from '../lib/mutations'
 import { useProfile } from '../lib/ProfileContext'
@@ -23,6 +24,20 @@ import { usePhotoUrls } from '../lib/usePhotoUrls'
 import { C, FONT_HEAD, INPUT_STYLE } from '../lib/theme'
 import { useWalletModal } from '../lib/WalletModalContext'
 import { withTimeout } from '../lib/withTimeout'
+
+function PhotoStageFallback({ loading, failed }: { loading?: boolean; failed?: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: C.faint }}>
+      <div className="h-8 w-8">
+        <IconCamera />
+      </div>
+      <p className="text-sm font-medium">
+        {loading ? 'Loading photos…' : failed ? "Couldn't load photo" : 'No photos uploaded yet'}
+      </p>
+    </div>
+  )
+}
+
 
 export function ListingDetail() {
   const { pubkey } = useParams<{ pubkey: string }>()
@@ -305,7 +320,7 @@ export function ListingDetail() {
         {result.warnings.length > 0 ? (
           <div className="mb-6 flex max-w-sm flex-col gap-2">
             {result.warnings.map((warning, i) => (
-              <p key={i} className="rounded-xl p-3 text-sm" style={{ background: 'rgba(201,162,62,0.08)', border: '1px solid rgba(201,162,62,0.25)', color: '#B5893A' }}>
+              <p key={i} className="rounded-xl p-3 text-sm" style={{ background: C.warningBg, border: `1px solid ${C.warningBorder}`, color: C.warning }}>
                 {warning}
               </p>
             ))}
@@ -448,51 +463,96 @@ export function ListingDetail() {
         <div>
           <div className="mb-6">
             <div
-              className={`mb-2 flex aspect-[16/9] items-center justify-center overflow-hidden rounded-2xl ${photosLoading ? 'animate-pulse' : ''} ${photoUrls[selectedPhoto] ? 'cursor-zoom-in' : ''}`}
-              style={{ background: C.surface2 }}
+              className={`relative mb-3 flex aspect-[16/9] items-center justify-center overflow-hidden rounded-2xl transition-all ${photosLoading ? 'animate-pulse' : ''} ${photoUrls[selectedPhoto] ? 'cursor-zoom-in' : ''}`}
+              style={{ background: C.surface2, border: `1px solid ${C.border}` }}
               onClick={() => {
                 if (photoUrls[selectedPhoto]) setLightboxOpen(true)
               }}
             >
               {photoUrls[selectedPhoto] ? (
-                <RetryImage src={photoUrls[selectedPhoto]} alt={`${listing.itemName}, photo ${selectedPhoto + 1}`} className="h-full w-full object-cover" />
+                <>
+                  <RetryImage
+                    src={photoUrls[selectedPhoto]}
+                    alt={`${listing.itemName}, photo ${selectedPhoto + 1}`}
+                    className="h-full w-full object-cover"
+                    fallback={<PhotoStageFallback failed />}
+                  />
+                  <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
+                    <span
+                      className="rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wide shadow-sm"
+                      style={{ background: categoryColor(listing.category), color: C.overlayText }}
+                    >
+                      {categoryLabel(listing.category)}
+                    </span>
+                    {rarity !== 'common' && (
+                      <span
+                        className="rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wide shadow-sm"
+                        style={{ background: C.gold, color: C.overlayText }}
+                      >
+                        {rarityLabel(listing.rarityTier)}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium shadow-sm backdrop-blur-sm"
+                    style={{ background: C.overlayBg, color: C.overlayText }}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                    </svg>
+                    <span>Click to enlarge</span>
+                  </div>
+                  {photoUrls.length > 1 && (
+                    <div
+                      className="pointer-events-none absolute bottom-3 right-3 rounded-full px-2.5 py-0.5 text-xs font-medium shadow-sm backdrop-blur-sm"
+                      style={{ background: C.overlayBg, color: C.overlayText }}
+                    >
+                      {selectedPhoto + 1} / {photoUrls.length}
+                    </div>
+                  )}
+                </>
               ) : (
-                <span className="text-sm" style={{ color: C.faint }}>
-                  {photosLoading ? 'Loading photos…' : 'Photos coming soon'}
-                </span>
+                <PhotoStageFallback loading={photosLoading} />
               )}
             </div>
             {photoUrls.length > 1 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2.5">
                 {photoUrls.map((url, i) => (
                   <button
                     key={url}
                     type="button"
                     onClick={() => setSelectedPhoto(i)}
-                    className="h-16 w-24 shrink-0 overflow-hidden rounded-lg transition-opacity"
+                    className="h-16 w-24 shrink-0 overflow-hidden rounded-xl transition-all hover:opacity-100"
                     style={{
                       background: C.surface2,
-                      outline: i === selectedPhoto ? `2px solid ${C.gold}` : 'none',
-                      outlineOffset: '-2px',
+                      border: i === selectedPhoto ? `2px solid ${C.primary}` : `1px solid ${C.border}`,
+                      boxShadow: i === selectedPhoto ? 'var(--gs-primary-glow)' : 'none',
                       opacity: i === selectedPhoto ? 1 : 0.7,
                     }}
                   >
-                    <RetryImage src={url} alt={`${listing.itemName}, photo ${i + 1}`} className="h-full w-full object-cover" />
+                    <RetryImage
+                      src={url}
+                      alt={`${listing.itemName}, photo ${i + 1}`}
+                      className="h-full w-full object-cover"
+                      fallback={<div className="flex h-full w-full items-center justify-center text-[10px]" style={{ color: C.faint }}>Failed</div>}
+                    />
                   </button>
                 ))}
               </div>
             )}
           </div>
-          <div className="mb-4 flex items-center gap-3">
-            <span className="rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: 'rgba(38,34,32,0.05)', border: `1px solid ${C.border}`, color: C.muted }}>
-              {categoryLabel(listing.category)}
-            </span>
-            {rarity !== 'common' && (
-              <span className="rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: 'rgba(255,107,53,0.14)', color: C.gold, border: '1px solid rgba(255,107,53,0.35)' }}>
-                {rarityLabel(listing.rarityTier)}
+          {!photoUrls[selectedPhoto] && (
+            <div className="mb-4 flex items-center gap-3">
+              <span className="rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: C.subtleBg, border: `1px solid ${C.border}`, color: C.muted }}>
+                {categoryLabel(listing.category)}
               </span>
-            )}
-          </div>
+              {rarity !== 'common' && (
+                <span className="rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: C.gold, color: C.overlayText }}>
+                  {rarityLabel(listing.rarityTier)}
+                </span>
+              )}
+            </div>
+          )}
           <h1 className="mb-2 text-3xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
             {listing.itemName}
           </h1>
@@ -511,18 +571,47 @@ export function ListingDetail() {
 
         <div>
           <div className="sticky top-24 rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-            <div className="mb-5">
-              <span className="text-3xl font-bold" style={{ color: C.cream }}>
-                {formatSol(listing.rentalPrice)}
-              </span>
-              <span className="text-base" style={{ color: C.faint }}>
-                /week
-              </span>
+            <div className="mb-6 grid grid-cols-2 gap-3">
+              <div className="rounded-xl p-3.5" style={{ background: C.subtleBg, border: `1px solid ${C.border}` }}>
+                <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
+                  Rental fee
+                </div>
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold" style={{ color: C.cream }}>
+                    {formatSol(listing.rentalPrice)}
+                  </span>
+                  <span className="text-xs" style={{ color: C.faint }}>
+                    /week
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
+                  Billed per week
+                </p>
+              </div>
+
+              <div className="rounded-xl p-3.5" style={{ background: C.trustSoft, border: '1px solid var(--gs-badge-positive-border)' }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: C.trust }}>
+                    Deposit
+                  </span>
+                  <span className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider" style={{ background: C.trust, color: C.overlayText }}>
+                    Refundable
+                  </span>
+                </div>
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold" style={{ color: C.trust }}>
+                    {formatSol(listing.depositAmount)}
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px]" style={{ color: C.trust }}>
+                  Returned after return
+                </p>
+              </div>
             </div>
 
             <div className="mb-6">
               <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide" style={{ color: C.faint }}>
-                Number of weeks (1–12)
+                Number of weeks (1 to 12)
               </label>
               <input
                 type="number"
@@ -723,18 +812,26 @@ export function ListingDetail() {
             <div className="mb-5 flex flex-col gap-2.5" style={{ borderTop: `1px solid ${C.border}`, paddingTop: '1rem' }}>
               <div className="flex justify-between text-sm">
                 <span style={{ color: C.muted }}>
-                  {formatSol(listing.rentalPrice)} × {weeks} week{weeks === 1 ? '' : 's'}
+                  Rental fee ({weeks} week{weeks === 1 ? '' : 's'})
                 </span>
-                <span style={{ color: C.muted }}>{formatSol(rentalCost)}</span>
+                <span className="font-semibold" style={{ color: C.cream }}>{formatSol(rentalCost)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span style={{ color: C.muted }}>Refundable deposit</span>
-                <span style={{ color: C.muted }}>{formatSol(listing.depositAmount)}</span>
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-1.5">
+                  <span style={{ color: C.muted }}>Refundable deposit</span>
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: C.trustSoft, color: C.trust }}>
+                    100% refundable
+                  </span>
+                </div>
+                <span className="font-semibold" style={{ color: C.cream }}>{formatSol(listing.depositAmount)}</span>
               </div>
               <div className="mt-1 flex justify-between pt-2.5 font-bold" style={{ borderTop: `1px solid ${C.border}` }}>
                 <span style={{ color: C.cream }}>Total due now</span>
-                <span style={{ color: C.cream }}>{formatSol(total)}</span>
+                <span className="text-lg" style={{ color: C.cream }}>{formatSol(total)}</span>
               </div>
+              <p className="text-[11px] leading-relaxed" style={{ color: C.faint }}>
+                Deposit of {formatSol(listing.depositAmount)} is returned automatically upon safe completion.
+              </p>
             </div>
 
             {error && (
@@ -777,7 +874,7 @@ export function ListingDetail() {
               {rentButtonLabel}
             </button>
 
-            <div className="flex items-start gap-2.5 rounded-xl p-3.5" style={{ border: '1px solid rgba(15,118,110,0.22)', background: C.trustSoft }}>
+            <div className="flex items-start gap-2.5 rounded-xl p-3.5" style={{ border: '1px solid var(--gs-badge-positive-border)', background: C.trustSoft }}>
               <svg className="mt-0.5 h-4 w-4 shrink-0" style={{ color: C.trust }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
@@ -817,14 +914,14 @@ function Lightbox({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.88)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      style={{ background: C.overlayBg }}
       onClick={onClose}
     >
       <button
         onClick={onClose}
-        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full text-lg"
-        style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}
+        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full text-lg shadow-md transition-opacity hover:opacity-80"
+        style={{ background: C.surface, color: C.cream, border: `1px solid ${C.border}` }}
         aria-label="Close"
       >
         ×
@@ -836,8 +933,8 @@ function Lightbox({
             e.stopPropagation()
             onNavigate((index - 1 + urls.length) % urls.length)
           }}
-          className="absolute left-4 flex h-10 w-10 items-center justify-center rounded-full text-xl"
-          style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}
+          className="absolute left-4 flex h-10 w-10 items-center justify-center rounded-full text-xl shadow-md transition-opacity hover:opacity-80"
+          style={{ background: C.surface, color: C.cream, border: `1px solid ${C.border}` }}
           aria-label="Previous photo"
         >
           ‹
@@ -847,7 +944,7 @@ function Lightbox({
       <RetryImage
         src={urls[index]}
         alt={`${alt}, photo ${index + 1}`}
-        className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain"
+        className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
 
@@ -857,8 +954,8 @@ function Lightbox({
             e.stopPropagation()
             onNavigate((index + 1) % urls.length)
           }}
-          className="absolute right-4 flex h-10 w-10 items-center justify-center rounded-full text-xl"
-          style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}
+          className="absolute right-4 flex h-10 w-10 items-center justify-center rounded-full text-xl shadow-md transition-opacity hover:opacity-80"
+          style={{ background: C.surface, color: C.cream, border: `1px solid ${C.border}` }}
           aria-label="Next photo"
         >
           ›
@@ -866,7 +963,7 @@ function Lightbox({
       )}
 
       {urls.length > 1 && (
-        <div className="absolute bottom-4 text-sm" style={{ color: 'rgba(255,255,255,0.75)' }}>
+        <div className="absolute bottom-4 rounded-full px-3 py-1 text-xs font-medium shadow-md" style={{ background: C.surface, color: C.cream, border: `1px solid ${C.border}` }}>
           {index + 1} / {urls.length}
         </div>
       )}

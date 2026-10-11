@@ -66,14 +66,14 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
         )}
         <span
           className="absolute left-2.5 top-2.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-sm"
-          style={{ background: catColor, color: '#FFFFFF' }}
+          style={{ background: catColor, color: C.overlayText }}
         >
           {categoryLabel(listing.category)}
         </span>
         {rarity !== 'common' && (
           <span
             className="absolute right-2.5 top-2.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-sm"
-            style={{ background: C.gold, color: '#FFFFFF' }}
+            style={{ background: C.gold, color: C.overlayText }}
           >
             {rarityLabel(listing.rarityTier)}
           </span>

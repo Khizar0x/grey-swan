@@ -60,6 +60,15 @@ export const C = {
   // the dark palette instead of staying frozen at their light-mode values.
   inputBg: 'var(--gs-input-bg)',
   subtleBg: 'var(--gs-subtle-bg)',
+  // Photo overlays and badges on top of media
+  overlayBg: 'var(--gs-overlay-bg)',
+  overlayText: 'var(--gs-overlay-text)',
+  primaryGlow: 'var(--gs-primary-glow)',
+  shadowAttention: 'var(--gs-shadow-attention)',
+  shadowPending: 'var(--gs-shadow-pending)',
+  warningBg: 'var(--gs-badge-pending-bg)',
+  warningBorder: 'var(--gs-badge-pending-border)',
+  warning: 'var(--gs-badge-pending-color)',
 } as const
 
 export const FONT_HEAD = "Helvetica, 'Helvetica Neue', Inter, sans-serif"
