@@ -231,3 +231,26 @@ pub struct RentalTimeline {
     // Room for later phase timestamps (arrived, return shipped, returned).
     pub reserved: [u8; 64],
 }
+
+// Only `Open` for now. New variants must be appended, never reordered (same
+// reason as Category above).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
+pub enum DisputeStatus {
+    Open,
+}
+
+// One per disputed rental, seeds ["dispute", rental], created by
+// flag_return_issue or reject_on_arrival and paid for by whoever raised it.
+// Rentals disputed before this existed have no Dispute account;
+// resolve_dispute doesn't take one, so they stay resolvable.
+#[account]
+#[derive(InitSpace)]
+pub struct Dispute {
+    pub rental: Pubkey,
+    pub kind: DisputeKind,
+    pub opened_at: i64,
+    pub status: DisputeStatus,
+    pub bump: u8,
+    // Room for the verdict, appeal, bond and reviewer fields (dispute-2b).
+    pub reserved: [u8; 384],
+}

@@ -35,9 +35,7 @@ fn devnet_admin() -> Pubkey {
 }
 
 fn svm_with_devnet_config() -> LiteSVM {
-    let mut svm = LiteSVM::new().with_sigverify(false);
-    svm.add_program(greyswan::id(), program_bytes()).unwrap();
-    set_time(&mut svm, START_TIME);
+    let mut svm = devnet_svm();
     let address = load_fixture(&mut svm, include_str!("fixtures/devnet_config.json"));
     assert_eq!(address, config_pda(), "fixture is not the Config PDA");
     svm.airdrop(&devnet_admin(), 10_000_000_000).unwrap();
@@ -99,7 +97,8 @@ fn migrates_real_devnet_config_and_keeps_admin_offset() {
     // The original 41 bytes (discriminator, admin, bump) are byte-identical,
     // so server/src/config.ts's read of bytes 8..40 is unaffected.
     assert_eq!(&after.data[..41], &before[..]);
-    assert!(after.lamports >= Rent::default().minimum_balance(after.data.len()));
+    let rent = svm.get_sysvar::<Rent>();
+    assert!(after.lamports >= rent.minimum_balance(after.data.len()));
 
     let config = read::<Config>(&svm, &config_pda());
     assert_eq!(config.admin, devnet_admin());

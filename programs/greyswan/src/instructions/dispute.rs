@@ -1,7 +1,17 @@
 use anchor_lang::prelude::*;
-use crate::constants::{CONFIG_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
+use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
 use crate::instructions::handover::check_arrival_deadline;
-use crate::state::{Config, DisputeKind, HandoverPhase, Listing, Rental, RentalStatus};
+use crate::state::{
+    Config, Dispute, DisputeKind, DisputeStatus, HandoverPhase, Listing, Rental, RentalStatus,
+};
+
+fn open_dispute(dispute: &mut Dispute, rental: Pubkey, kind: DisputeKind, now: i64, bump: u8) {
+    dispute.rental = rental;
+    dispute.kind = kind;
+    dispute.opened_at = now;
+    dispute.status = DisputeStatus::Open;
+    dispute.bump = bump;
+}
 
 // ---------- Owner flags a problem after the item comes back ----------
 
@@ -9,7 +19,20 @@ use crate::state::{Config, DisputeKind, HandoverPhase, Listing, Rental, RentalSt
 pub struct FlagReturnIssue<'info> {
     #[account(mut)]
     pub rental: Account<'info, Rental>,
+
+    #[account(
+        init,
+        payer = owner,
+        space = 8 + Dispute::INIT_SPACE,
+        seeds = [DISPUTE_SEED, rental.key().as_ref()],
+        bump
+    )]
+    pub dispute: Account<'info, Dispute>,
+
+    #[account(mut)]
     pub owner: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 pub fn handle_flag_return_issue(ctx: Context<FlagReturnIssue>, reason: String) -> Result<()> {
@@ -32,11 +55,14 @@ pub fn handle_flag_return_issue(ctx: Context<FlagReturnIssue>, reason: String) -
         crate::error::ErrorCode::DisputeReasonTooLong
     );
 
+    let now = Clock::get()?.unix_timestamp;
     let rental = &mut ctx.accounts.rental;
     rental.status = RentalStatus::Disputed;
     rental.dispute_kind = DisputeKind::ReturnIssue;
     rental.dispute_reason = reason;
-    rental.disputed_at = Clock::get()?.unix_timestamp;
+    rental.disputed_at = now;
+
+    open_dispute(&mut ctx.accounts.dispute, rental.key(), DisputeKind::ReturnIssue, now, ctx.bumps.dispute);
 
     Ok(())
 }
@@ -55,7 +81,19 @@ pub struct RejectOnArrival<'info> {
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
 
+    #[account(
+        init,
+        payer = renter,
+        space = 8 + Dispute::INIT_SPACE,
+        seeds = [DISPUTE_SEED, rental.key().as_ref()],
+        bump
+    )]
+    pub dispute: Account<'info, Dispute>,
+
+    #[account(mut)]
     pub renter: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 pub fn handle_reject_on_arrival(
@@ -85,13 +123,16 @@ pub fn handle_reject_on_arrival(
     );
     check_arrival_deadline(&ctx.accounts.timeline, &ctx.accounts.config)?;
 
+    let now = Clock::get()?.unix_timestamp;
     let rental = &mut ctx.accounts.rental;
     rental.phase2_photos = photos;
     rental.current_phase = HandoverPhase::OnArrival;
     rental.status = RentalStatus::Disputed;
     rental.dispute_kind = DisputeKind::ArrivalIssue;
     rental.dispute_reason = reason;
-    rental.disputed_at = Clock::get()?.unix_timestamp;
+    rental.disputed_at = now;
+
+    open_dispute(&mut ctx.accounts.dispute, rental.key(), DisputeKind::ArrivalIssue, now, ctx.bumps.dispute);
 
     Ok(())
 }

@@ -118,6 +118,8 @@ fn test_flag_return_issue() {
             .data(),
             greyswan::accounts::FlagReturnIssue {
                 rental: rental.pubkey(),
+                dispute: common::dispute_pda(&rental.pubkey()),
+                system_program: system_program::ID,
                 owner: owner.pubkey(),
             }
             .to_account_metas(None),
@@ -222,6 +224,8 @@ fn test_flag_return_issue() {
             .data(),
             greyswan::accounts::FlagReturnIssue {
                 rental: rental.pubkey(),
+                dispute: common::dispute_pda(&rental.pubkey()),
+                system_program: system_program::ID,
                 owner: owner.pubkey(),
             }
             .to_account_metas(None),
@@ -314,6 +318,8 @@ fn test_reject_on_arrival() {
             .data(),
             greyswan::accounts::RejectOnArrival {
                 rental: rental.pubkey(),
+                dispute: common::dispute_pda(&rental.pubkey()),
+                system_program: system_program::ID,
                 timeline: common::timeline_pda(&rental.pubkey()),
                 config: common::config_pda(),
                 renter: renter.pubkey(),
@@ -362,6 +368,8 @@ fn test_reject_on_arrival() {
             .data(),
             greyswan::accounts::RejectOnArrival {
                 rental: rental.pubkey(),
+                dispute: common::dispute_pda(&rental.pubkey()),
+                system_program: system_program::ID,
                 timeline: common::timeline_pda(&rental.pubkey()),
                 config: common::config_pda(),
                 renter: renter.pubkey(),
@@ -509,6 +517,8 @@ fn test_resolve_dispute() {
             .data(),
             greyswan::accounts::RejectOnArrival {
                 rental: rental.pubkey(),
+                dispute: common::dispute_pda(&rental.pubkey()),
+                system_program: system_program::ID,
                 timeline: common::timeline_pda(&rental.pubkey()),
                 config: common::config_pda(),
                 renter: renter.pubkey(),

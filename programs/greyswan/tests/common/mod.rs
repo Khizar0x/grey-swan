@@ -33,6 +33,27 @@ pub fn setup() -> LiteSVM {
     svm
 }
 
+/// For tests that load real devnet account bytes: signature verification
+/// off (see send_as) and devnet's actual Rent sysvar, which is cheaper than
+/// LiteSVM's default. Some real devnet accounts (e.g. older listings) hold
+/// less than the default rent-exempt minimum, so writes to them would fail
+/// here under the default rules even though they succeed on devnet.
+pub fn devnet_svm() -> LiteSVM {
+    let mut svm = LiteSVM::new().with_sigverify(false);
+    svm.add_program(greyswan::id(), program_bytes()).unwrap();
+    // Read from devnet's SysvarRent111... account. The field names are
+    // deprecated in favour of a constructor this crate version doesn't have.
+    #[allow(deprecated)]
+    let rent = anchor_lang::solana_program::rent::Rent {
+        lamports_per_byte_year: 5080,
+        exemption_threshold: 1.0,
+        burn_percent: 50,
+    };
+    svm.set_sysvar(&rent);
+    set_time(&mut svm, START_TIME);
+    svm
+}
+
 pub fn set_time(svm: &mut LiteSVM, unix_timestamp: i64) {
     let mut clock = svm.get_sysvar::<Clock>();
     clock.unix_timestamp = unix_timestamp;
@@ -85,6 +106,10 @@ pub fn config_pda() -> Pubkey {
 
 pub fn timeline_pda(rental: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"timeline", rental.as_ref()], &greyswan::id()).0
+}
+
+pub fn dispute_pda(rental: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"dispute", rental.as_ref()], &greyswan::id()).0
 }
 
 pub fn listing_pda(owner: &Pubkey, item_name: &str) -> Pubkey {
@@ -209,7 +234,12 @@ pub fn all_phases(svm: &mut LiteSVM, rental: Pubkey, owner: &Keypair, renter: &K
 pub fn flag_return_issue_ix(rental: Pubkey, owner: Pubkey) -> Instruction {
     ix(
         greyswan::instruction::FlagReturnIssue { reason: "Lens is scratched".to_string() },
-        greyswan::accounts::FlagReturnIssue { rental, owner },
+        greyswan::accounts::FlagReturnIssue {
+            rental,
+            dispute: dispute_pda(&rental),
+            owner,
+            system_program: system_program::ID,
+        },
     )
 }
 
@@ -227,7 +257,9 @@ pub fn reject_on_arrival_ix(rental: Pubkey, renter: Pubkey) -> Instruction {
             rental,
             timeline: timeline_pda(&rental),
             config: config_pda(),
+            dispute: dispute_pda(&rental),
             renter,
+            system_program: system_program::ID,
         },
     )
 }

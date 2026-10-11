@@ -154,8 +154,7 @@ fn prefunded_timeline_address_does_not_block_shipping() {
 /// It is Active and at BeforeSending: shipped under the old program, so it
 /// has no timeline. It shipped in September 2026, far outside any window.
 fn legacy_shipped_rental() -> (LiteSVM, Pubkey, Pubkey) {
-    let mut svm = LiteSVM::new().with_sigverify(false);
-    svm.add_program(greyswan::id(), program_bytes()).unwrap();
+    let mut svm = devnet_svm();
     set_time(&mut svm, START_TIME + 60 * 86_400);
     init_test_config(&mut svm);
     let rental = load_fixture(

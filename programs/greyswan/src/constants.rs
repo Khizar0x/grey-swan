@@ -58,3 +58,5 @@ pub const DEFAULT_LARGE_DEPOSIT_THRESHOLD_LAMPORTS: u64 = 5_000_000_000;
 pub const DEFAULT_TWO_REVIEWER_THRESHOLD_LAMPORTS: u64 = 10_000_000_000;
 
 pub const TIMELINE_SEED: &[u8] = b"timeline";
+
+pub const DISPUTE_SEED: &[u8] = b"dispute";
