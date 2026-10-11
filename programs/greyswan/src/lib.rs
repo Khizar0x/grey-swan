@@ -27,6 +27,14 @@ pub mod greyswan {
         crate::instructions::init_config::handle_init_config(ctx, admin)
     }
 
+    pub fn migrate_config(ctx: Context<MigrateConfig>) -> Result<()> {
+        crate::instructions::migrate_config::handle_migrate_config(ctx)
+    }
+
+    pub fn update_config(ctx: Context<UpdateConfig>, update: ConfigUpdate) -> Result<()> {
+        crate::instructions::update_config::handle_update_config(ctx, update)
+    }
+
     pub fn list_item(
         ctx: Context<ListItem>,
         item_name: String,

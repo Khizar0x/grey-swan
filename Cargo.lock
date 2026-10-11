@@ -1400,9 +1400,13 @@ name = "greyswan"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "base64 0.22.1",
  "litesvm",
+ "serde_json",
+ "solana-account",
  "solana-keypair",
  "solana-message",
+ "solana-signature",
  "solana-signer",
  "solana-transaction",
 ]

@@ -62,4 +62,24 @@ pub enum ErrorCode {
     OwnerAlreadyShipped,
     #[msg("This listing does not belong to this rental")]
     ListingMismatch,
+    #[msg("Settings have already been upgraded")]
+    ConfigAlreadyMigrated,
+    #[msg("Settings must be upgraded before this can be used")]
+    ConfigNotMigrated,
+    #[msg("Settings account is not in the expected format")]
+    InvalidConfigAccount,
+    #[msg("Basis point values cannot exceed 10000")]
+    BpsOutOfRange,
+    #[msg("Damage tier percentages must be in ascending order")]
+    RubricNotAscending,
+    #[msg("Tier must be between 0 and 4")]
+    InvalidTier,
+    #[msg("The appeal window cannot be shorter than 24 hours")]
+    AppealWindowTooShort,
+    #[msg("Duration is outside the allowed range")]
+    InvalidDuration,
+    #[msg("No more than 10 reviewers are allowed")]
+    TooManyReviewers,
+    #[msg("Reviewer list contains an empty or repeated entry")]
+    InvalidReviewer,
 }

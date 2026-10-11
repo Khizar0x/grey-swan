@@ -19,8 +19,10 @@ pub struct InitConfig<'info> {
 }
 
 pub fn handle_init_config(ctx: Context<InitConfig>, admin: Pubkey) -> Result<()> {
-    let config = &mut ctx.accounts.config;
-    config.admin = admin;
-    config.bump = ctx.bumps.config;
+    // A fresh deployment starts at the current version, so it never needs
+    // migrate_config.
+    ctx.accounts
+        .config
+        .set_inner(Config::with_defaults(admin, ctx.bumps.config));
     Ok(())
 }

@@ -9,6 +9,8 @@ pub mod confirm_return;
 pub mod claim_refund;
 pub mod handover;
 pub mod dispute;
+pub mod migrate_config;
+pub mod update_config;
 
 pub use initialize::*;
 pub use increment::*;
@@ -21,3 +23,5 @@ pub use confirm_return::*;
 pub use claim_refund::*;
 pub use handover::*;
 pub use dispute::*;
+pub use migrate_config::*;
+pub use update_config::*;
