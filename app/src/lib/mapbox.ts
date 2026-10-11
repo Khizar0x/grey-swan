@@ -8,16 +8,43 @@ export interface GeocodeResult {
   lng: number
   placeName: string
   relevance: number
+  // The city-level component of this result (e.g. "London" out of
+  // "Charing Cross, Westminster, London, Greater London, England, United
+  // Kingdom") — display-only use (the header pill); placeName remains the
+  // full string everything else (distance math, saved area) keeps using.
+  city: string
+}
+
+interface MapboxContextEntry {
+  id: string
+  text: string
 }
 
 interface MapboxFeature {
   center: [number, number]
   place_name: string
   relevance: number
+  text: string
+  place_type?: string[]
+  context?: MapboxContextEntry[]
 }
 
 interface MapboxGeocodeResponse {
   features?: MapboxFeature[]
+}
+
+// Mapbox's context array holds the sibling admin-hierarchy components of a
+// match (city, region, country, ...), each with an id prefixed by type —
+// "place.<id>" is the city-level one. If the matched feature is itself
+// city-level, its own `text` already is the city name, no context lookup
+// needed. Falls back to the feature's own `text` when no "place."
+// component exists at all (e.g. a very rural match where Mapbox's best hit
+// is a region or country) — `text` is always present and always shorter
+// than `place_name`, so it's the safest fallback short label.
+function extractCity(feature: MapboxFeature): string {
+  if (feature.place_type?.includes('place')) return feature.text
+  const placeContext = feature.context?.find((c) => c.id.startsWith('place.'))
+  return placeContext?.text ?? feature.text
 }
 
 async function geocode(query: string, types: string): Promise<GeocodeResult | null> {
@@ -34,7 +61,7 @@ async function geocode(query: string, types: string): Promise<GeocodeResult | nu
   if (!feature) return null
 
   const [lng, lat] = feature.center
-  return { lat, lng, placeName: feature.place_name, relevance: feature.relevance }
+  return { lat, lng, placeName: feature.place_name, relevance: feature.relevance, city: extractCity(feature) }
 }
 
 // A full delivery address needs street-level precision — a bare city or a
