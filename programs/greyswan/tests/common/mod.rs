@@ -283,6 +283,29 @@ pub fn reject_on_arrival(svm: &mut LiteSVM, rental: Pubkey, renter: &Keypair) ->
     send(svm, reject_on_arrival_ix(rental, renter.pubkey()), renter, &[renter])
 }
 
+pub fn resolve_dispute_ix(
+    listing: Pubkey,
+    rental: Pubkey,
+    admin: Pubkey,
+    owner: Pubkey,
+    renter: Pubkey,
+    owner_amount: u64,
+    renter_amount: u64,
+) -> Instruction {
+    ix(
+        greyswan::instruction::ResolveDispute { owner_amount, renter_amount },
+        greyswan::accounts::ResolveDispute {
+            config: config_pda(),
+            listing,
+            rental,
+            admin,
+            owner,
+            renter,
+            system_program: system_program::ID,
+        },
+    )
+}
+
 pub fn init_config(svm: &mut LiteSVM, admin: &Keypair) {
     send(
         svm,

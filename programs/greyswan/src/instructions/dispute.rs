@@ -1,8 +1,9 @@
 use anchor_lang::prelude::*;
-use crate::constants::{DISPUTE_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
+use crate::constants::{CONFIG_SEED, DISPUTE_SEED, MAX_DISPUTE_REASON_LEN, TIMELINE_SEED};
 use crate::instructions::handover::check_arrival_deadline;
 use crate::state::{
     Config, Dispute, DisputeKind, DisputeStatus, HandoverPhase, Listing, Rental, RentalStatus,
+    RentalTimeline,
 };
 
 fn open_dispute(dispute: &mut Dispute, rental: Pubkey, kind: DisputeKind, now: i64, bump: u8) {
@@ -130,6 +131,76 @@ pub fn handle_reject_on_arrival(
     rental.disputed_at = now;
 
     open_dispute(&mut ctx.accounts.dispute, rental.key(), DisputeKind::ArrivalIssue, now, ctx.bumps.dispute);
+
+    Ok(())
+}
+
+// ---------- Owner flags that the item hasn't come back ----------
+
+// The renter has the item and hasn't sent it back (no phase 3) by the
+// return date plus a grace period. Funds freeze and a reviewer decides,
+// with resolve_dispute, how much of the deposit goes to the owner.
+
+#[derive(Accounts)]
+pub struct FlagNotReturned<'info> {
+    #[account(mut)]
+    pub rental: Account<'info, Rental>,
+
+    // Typed, so a rental with no timeline (shipped before timelines existed,
+    // so it has no return date) fails here. Its exit is admin_open_dispute.
+    #[account(seeds = [TIMELINE_SEED, rental.key().as_ref()], bump = timeline.bump)]
+    pub timeline: Account<'info, RentalTimeline>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+
+    #[account(
+        init,
+        payer = owner,
+        space = 8 + Dispute::INIT_SPACE,
+        seeds = [DISPUTE_SEED, rental.key().as_ref()],
+        bump
+    )]
+    pub dispute: Account<'info, Dispute>,
+
+    #[account(mut)]
+    pub owner: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handle_flag_not_returned(ctx: Context<FlagNotReturned>) -> Result<()> {
+    require_keys_eq!(
+        ctx.accounts.rental.owner,
+        ctx.accounts.owner.key(),
+        crate::error::ErrorCode::NotOwnerForPhase,
+    );
+    require!(
+        ctx.accounts.rental.status == RentalStatus::Active,
+        crate::error::ErrorCode::InvalidRentalStatus,
+    );
+    // The renter has the item (phase 2 done) and hasn't sent it back
+    // (phase 3 not done).
+    require!(
+        ctx.accounts.rental.current_phase == HandoverPhase::OnArrival,
+        crate::error::ErrorCode::PhaseOutOfOrder,
+    );
+    let return_due_at = ctx.accounts.timeline.return_due_at;
+    require!(return_due_at != 0, crate::error::ErrorCode::RentalTimesNotRecorded);
+
+    // Grace is read from Config now, not stored per rental.
+    let overdue_at = return_due_at
+        .checked_add(ctx.accounts.config.not_returned_grace_secs)
+        .ok_or(crate::error::ErrorCode::MathOverflow)?;
+    let now = Clock::get()?.unix_timestamp;
+    require!(now > overdue_at, crate::error::ErrorCode::ReturnWindowStillOpen);
+
+    let rental = &mut ctx.accounts.rental;
+    rental.status = RentalStatus::Disputed;
+    rental.dispute_kind = DisputeKind::NotReturned;
+    rental.disputed_at = now;
+
+    open_dispute(&mut ctx.accounts.dispute, rental.key(), DisputeKind::NotReturned, now, ctx.bumps.dispute);
 
     Ok(())
 }

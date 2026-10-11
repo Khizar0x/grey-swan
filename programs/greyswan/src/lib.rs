@@ -131,6 +131,10 @@ pub mod greyswan {
         crate::instructions::dispute::handle_reject_on_arrival(ctx, photos, reason)
     }
 
+    pub fn flag_not_returned(ctx: Context<FlagNotReturned>) -> Result<()> {
+        crate::instructions::dispute::handle_flag_not_returned(ctx)
+    }
+
     pub fn resolve_dispute(
         ctx: Context<ResolveDispute>,
         owner_amount: u64,

@@ -88,4 +88,8 @@ pub enum ErrorCode {
     InvalidTimelineAccount,
     #[msg("The renter still has time to confirm arrival")]
     ArrivalWindowStillOpen,
+    #[msg("The renter still has time to send the item back")]
+    ReturnWindowStillOpen,
+    #[msg("This rental has no recorded dates for this step")]
+    RentalTimesNotRecorded,
 }

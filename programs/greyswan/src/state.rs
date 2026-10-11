@@ -201,10 +201,12 @@ pub enum HandoverPhase {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
+// New variants must be appended, never reordered (same reason as Category).
 pub enum DisputeKind {
     None,
     ReturnIssue,
     ArrivalIssue,
+    NotReturned,
 }
 
 #[account]
