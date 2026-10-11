@@ -297,3 +297,49 @@ pub fn handle_expire_appeal(ctx: Context<SettleVerdict>) -> Result<()> {
         &accounts.renter.to_account_info(),
     )
 }
+
+// ---------- Admin sets an AI verdict aside ----------
+
+// For a verdict the admin doesn't trust (a bad model run, a compromised
+// verdict key). The dispute goes to Voided rather than back to Open, so
+// the AI can't post again and a reviewer decides with reviewer_resolve.
+// Only an unappealed verdict can be voided (an appealed one is already
+// with a reviewer), so normally no bonds are held; any that are go back.
+
+#[derive(Accounts)]
+pub struct VoidVerdict<'info> {
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        has_one = admin @ crate::error::ErrorCode::NotAdmin,
+    )]
+    pub config: Box<Account<'info, Config>>,
+
+    pub rental: Box<Account<'info, Rental>>,
+
+    #[account(mut, seeds = [DISPUTE_SEED, rental.key().as_ref()], bump = dispute.bump)]
+    pub dispute: Box<Account<'info, Dispute>>,
+
+    /// CHECK: verified against rental.owner in the handler
+    #[account(mut)]
+    pub owner: UncheckedAccount<'info>,
+
+    /// CHECK: verified against rental.renter in the handler
+    #[account(mut)]
+    pub renter: UncheckedAccount<'info>,
+
+    pub admin: Signer<'info>,
+}
+
+pub fn handle_void_verdict(ctx: Context<VoidVerdict>) -> Result<()> {
+    let accounts = ctx.accounts;
+    require_keys_eq!(accounts.rental.owner, accounts.owner.key(), crate::error::ErrorCode::NotListingOwner);
+    require_keys_eq!(accounts.rental.renter, accounts.renter.key(), crate::error::ErrorCode::NotRenter);
+    require!(
+        accounts.dispute.status == DisputeStatus::VerdictPosted,
+        crate::error::ErrorCode::InvalidDisputeStatus,
+    );
+    refund_bonds(&mut accounts.dispute, &accounts.owner.to_account_info(), &accounts.renter.to_account_info())?;
+    accounts.dispute.status = DisputeStatus::Voided;
+    Ok(())
+}

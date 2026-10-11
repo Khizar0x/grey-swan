@@ -625,3 +625,70 @@ fn appeal_expiry_is_fixed_when_the_verdict_is_posted() {
     set_time(&mut svm, START_TIME + APPEAL_WINDOW + DAY + 1);
     assert_program_err(settle(&mut svm, Settle::Expire, &c, &c.owner), ErrorCode::AppealNotExpired);
 }
+
+// ---------- void_verdict ----------
+
+fn void_ix(c: &Case, signer: Pubkey) -> Instruction {
+    ix(
+        greyswan::instruction::VoidVerdict {},
+        greyswan::accounts::VoidVerdict {
+            config: config_pda(),
+            rental: c.rental,
+            dispute: dispute_pda(&c.rental),
+            owner: c.owner.pubkey(),
+            renter: c.renter.pubkey(),
+            admin: signer,
+        },
+    )
+}
+
+fn void(svm: &mut LiteSVM, c: &Case, signer: &Keypair) -> Result<(), String> {
+    send(svm, void_ix(c, signer.pubkey()), signer, &[signer])
+}
+
+#[test]
+fn admin_voids_a_verdict_and_it_can_no_longer_pay_out_or_be_reposted() {
+    let (mut svm, c) = verdict_posted();
+    let held = lamports(&svm, &c.rental);
+    void(&mut svm, &c, &c.admin).unwrap();
+    assert_eq!(dispute(&svm, &c.rental).status, DisputeStatus::Voided);
+    assert_eq!(lamports(&svm, &c.rental), held, "funds stay held for a reviewer");
+
+    set_time(&mut svm, START_TIME + 60 * DAY);
+    assert_program_err(settle(&mut svm, Settle::Finalize, &c, &c.owner), ErrorCode::InvalidDisputeStatus);
+    assert_program_err(post(&mut svm, c.rental, &c.verdict, &[0]), ErrorCode::InvalidDisputeStatus);
+    assert_program_err(appeal(&mut svm, c.rental, &c.renter), ErrorCode::InvalidDisputeStatus);
+    assert_program_err(void(&mut svm, &c, &c.admin), ErrorCode::InvalidDisputeStatus);
+}
+
+#[test]
+fn only_the_admin_can_void() {
+    let (mut svm, c) = verdict_posted();
+    for signer in [&c.reviewer, &c.verdict, &c.owner, &c.renter] {
+        assert_program_err(void(&mut svm, &c, signer), ErrorCode::NotAdmin);
+    }
+    assert_eq!(dispute(&svm, &c.rental).status, DisputeStatus::VerdictPosted);
+}
+
+#[test]
+fn void_only_applies_to_an_unappealed_verdict() {
+    let (mut svm, c) = flagged();
+    assert_program_err(void(&mut svm, &c, &c.admin), ErrorCode::InvalidDisputeStatus);
+
+    let (mut svm, c) = verdict_posted();
+    appeal(&mut svm, c.rental, &c.renter).unwrap();
+    assert_program_err(void(&mut svm, &c, &c.admin), ErrorCode::InvalidDisputeStatus);
+    assert_eq!(dispute(&svm, &c.rental).renter_bond, DEFAULT_BOND_MIN);
+}
+
+#[test]
+fn void_rejects_substituted_owner_or_renter() {
+    let (mut svm, c) = verdict_posted();
+    let stranger = Pubkey::new_unique();
+    let mut bad = void_ix(&c, c.admin.pubkey());
+    bad.accounts[3].pubkey = stranger;
+    assert_program_err(send(&mut svm, bad, &c.admin, &[&c.admin]), ErrorCode::NotListingOwner);
+    let mut bad = void_ix(&c, c.admin.pubkey());
+    bad.accounts[4].pubkey = stranger;
+    assert_program_err(send(&mut svm, bad, &c.admin, &[&c.admin]), ErrorCode::NotRenter);
+}

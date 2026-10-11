@@ -178,6 +178,10 @@ pub mod greyswan {
         crate::instructions::verdict::handle_expire_appeal(ctx)
     }
 
+    pub fn void_verdict(ctx: Context<VoidVerdict>) -> Result<()> {
+        crate::instructions::verdict::handle_void_verdict(ctx)
+    }
+
     pub fn resolve_dispute(
         ctx: Context<ResolveDispute>,
         owner_amount: u64,
