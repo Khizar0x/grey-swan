@@ -99,6 +99,6 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     req.authPubkey = decoded.sub
     next()
   } catch {
-    res.status(401).json({ error: 'Session expired — sign in again.' })
+    res.status(401).json({ error: 'Session expired. Sign in again.' })
   }
 }

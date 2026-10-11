@@ -7,10 +7,14 @@ import multer from 'multer'
 import { type AddressRole, getAddress, getLatestRenterAddress, upsertAddress } from './addresses.js'
 import { issueNonceMessage, issueSessionToken, requireAuth, verifySignInSignature } from './auth.js'
 import { getAdminPubkey } from './config.js'
+import { getDefaultAddress, upsertDefaultAddress } from './defaultAddress.js'
 import { type DeliveryMethod, getDeliveryMethod, upsertDeliveryMethod } from './delivery.js'
 import { type DisputeReviewStatus, listDisputeNotes, upsertDisputeNote } from './disputes.js'
 import { getAllListingAreas, getListingArea, upsertListingArea } from './listingAreas.js'
+import { countUnread, getLastMessage, insertMessage, listMessages, markReadExceptSender, MESSAGE_MAX_LEN } from './messages.js'
 import { getProfile, upsertProfile } from './profiles.js'
+import { requireRentalParty } from './rentalAuth.js'
+import { fetchRentalSummary } from './rentalChain.js'
 
 // This server exists for one reason: the Pinata JWT must never reach the
 // browser. If it were embedded in the frontend bundle, anyone could open
@@ -72,7 +76,7 @@ app.post('/api/auth/verify', (req, res) => {
     return
   }
   if (!verifySignInSignature(pubkey, signature)) {
-    res.status(401).json({ error: 'Signature verification failed — try signing in again.' })
+    res.status(401).json({ error: 'Signature verification failed. Try signing in again.' })
     return
   }
   res.json({ token: issueSessionToken(pubkey) })
@@ -204,6 +208,43 @@ app.post('/api/address', requireAuth, (req, res) => {
   }
 
   const row = upsertAddress(rentalPubkey, role, address.trim(), req.authPubkey, ownerPubkey, renterPubkey)
+  res.json({ address: row.address })
+})
+
+// A wallet's own standing address — independent of any rental, unlike the
+// section above (see defaultAddress.ts). Read/write access follows the
+// exact same "only your own pubkey" shape as /api/profile.
+
+app.get('/api/my-address/:pubkey', requireAuth, (req, res) => {
+  if (req.authPubkey !== req.params.pubkey) {
+    res.status(403).json({ error: 'You can only view your own saved address.' })
+    return
+  }
+  const row = getDefaultAddress(req.params.pubkey)
+  if (!row) {
+    res.status(404).json({ error: 'No saved address yet.' })
+    return
+  }
+  res.json({ address: row.address })
+})
+
+app.post('/api/my-address', requireAuth, (req, res) => {
+  const { pubkey, address } = req.body ?? {}
+
+  if (!isValidPubkey(pubkey)) {
+    res.status(400).json({ error: 'Invalid public key.' })
+    return
+  }
+  if (req.authPubkey !== pubkey) {
+    res.status(403).json({ error: 'You can only edit your own saved address.' })
+    return
+  }
+  if (typeof address !== 'string' || address.trim().length === 0 || address.length > 500) {
+    res.status(400).json({ error: 'Address is required (500 characters max).' })
+    return
+  }
+
+  const row = upsertDefaultAddress(pubkey, address.trim())
   res.json({ address: row.address })
 })
 
@@ -346,6 +387,96 @@ app.post('/api/admin/dispute-notes', requireAuth, requireAdmin, (req, res) => {
 
   const row = upsertDisputeNote(rentalPubkey, status, note.trim())
   res.json({ note: row })
+})
+
+// Rental-tied chat: off-chain only, same shape as addresses/delivery, but
+// gated by requireRentalParty (rentalAuth.ts) instead of a client-supplied
+// owner/renter pair — every read and write re-checks the real on-chain
+// Rental account, since a chat thread has no DB row of its own to carry
+// trusted owner/renter fields the way a saved address does.
+
+// Powers the /messages inbox list: one batched call instead of the frontend
+// looping its own requireRentalParty-gated request per rental. There's no
+// single rentalPubkey in the URL to hang requireRentalParty off of here, so
+// each requested pubkey gets the same on-chain ownership check inline below
+// instead — a caller only ever gets back data for rentals it's really a
+// party to, silently skipping anything else (including rentals that don't
+// exist or have no messages yet, which just means "not a conversation").
+// Registered before /api/messages/:rentalPubkey below so Express doesn't
+// match "summary" as a :rentalPubkey value first.
+app.post('/api/messages/summary', requireAuth, async (req, res) => {
+  const { rentalPubkeys } = (req.body ?? {}) as { rentalPubkeys?: unknown }
+  if (!Array.isArray(rentalPubkeys) || rentalPubkeys.length === 0 || rentalPubkeys.length > 200 || !rentalPubkeys.every((p) => typeof p === 'string')) {
+    res.status(400).json({ error: 'Invalid request.' })
+    return
+  }
+
+  const conversations: Record<string, { lastMessageText: string; lastMessageAt: number; lastMessageIsMine: boolean; unreadCount: number }> = {}
+
+  await Promise.all(
+    (rentalPubkeys as string[]).map(async (rentalPubkey) => {
+      const rental = await fetchRentalSummary(rentalPubkey).catch(() => null)
+      if (!rental) return
+      if (req.authPubkey !== rental.owner && req.authPubkey !== rental.renter) return
+
+      const last = getLastMessage(rentalPubkey)
+      if (!last) return
+
+      conversations[rentalPubkey] = {
+        lastMessageText: last.body,
+        lastMessageAt: last.created_at,
+        lastMessageIsMine: last.sender_pubkey === req.authPubkey,
+        unreadCount: countUnread(rentalPubkey, req.authPubkey!),
+      }
+    }),
+  )
+
+  res.json({ conversations })
+})
+
+app.post('/api/messages/:rentalPubkey', requireAuth, requireRentalParty, (req, res) => {
+  const { text } = req.body ?? {}
+  if (typeof text !== 'string' || text.trim().length === 0) {
+    res.status(400).json({ error: 'Message cannot be empty.' })
+    return
+  }
+  if (text.length > MESSAGE_MAX_LEN) {
+    res.status(400).json({ error: `Messages are limited to ${MESSAGE_MAX_LEN} characters.` })
+    return
+  }
+  if (req.rental!.isCompleted) {
+    res.status(403).json({ error: 'This rental is complete.' })
+    return
+  }
+
+  const row = insertMessage(req.params.rentalPubkey as string, req.authPubkey!, text.trim())
+  res.json({
+    message: { id: row.id, senderPubkey: row.sender_pubkey, text: row.body, createdAt: row.created_at, isMine: true, wasUnread: false },
+  })
+})
+
+app.get('/api/messages/:rentalPubkey', requireAuth, requireRentalParty, (req, res) => {
+  const rentalPubkey = req.params.rentalPubkey as string
+  // Read before marking: a message's own read_at reflects whether it was
+  // *already* unread-for-me the moment this fetch started, which is exactly
+  // what the frontend needs to place its "New messages" divider. Marking
+  // read is a side effect of this same call (see messages.ts) — a later
+  // poll while the panel stays open will find everything already read.
+  const rows = listMessages(rentalPubkey)
+  const messages = rows.map((row) => ({
+    id: row.id,
+    senderPubkey: row.sender_pubkey,
+    text: row.body,
+    createdAt: row.created_at,
+    isMine: row.sender_pubkey === req.authPubkey,
+    wasUnread: row.sender_pubkey !== req.authPubkey && row.read_at === null,
+  }))
+  markReadExceptSender(rentalPubkey, req.authPubkey!)
+  res.json({ messages })
+})
+
+app.get('/api/messages/:rentalPubkey/unread-count', requireAuth, requireRentalParty, (req, res) => {
+  res.json({ count: countUnread(req.params.rentalPubkey as string, req.authPubkey!) })
 })
 
 app.post('/api/pin', upload.single('file'), async (req, res) => {
