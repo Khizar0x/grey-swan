@@ -99,6 +99,7 @@ impl Config {
             self.appeal_window_secs >= MIN_APPEAL_WINDOW_SECS,
             ErrorCode::AppealWindowTooShort
         );
+        require!(self.appeal_window_secs <= MAX_TIMEOUT_SECS, ErrorCode::InvalidDuration);
         require!(
             self.appeal_expiry_secs > 0 && self.appeal_expiry_secs <= MAX_TIMEOUT_SECS,
             ErrorCode::InvalidDuration

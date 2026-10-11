@@ -264,6 +264,7 @@ fn update_config_enforces_bounds() {
         (ConfigUpdate { bond_bps: Some(10_001), ..Default::default() }, ErrorCode::BpsOutOfRange),
         (ConfigUpdate { auto_release_max_tier: Some(5), ..Default::default() }, ErrorCode::InvalidTier),
         (ConfigUpdate { appeal_window_secs: Some(86_399), ..Default::default() }, ErrorCode::AppealWindowTooShort),
+        (ConfigUpdate { appeal_window_secs: Some(DAY_30 + 1), ..Default::default() }, ErrorCode::InvalidDuration),
         (ConfigUpdate { appeal_expiry_secs: Some(0), ..Default::default() }, ErrorCode::InvalidDuration),
         (ConfigUpdate { appeal_expiry_secs: Some(DAY_30 + 1), ..Default::default() }, ErrorCode::InvalidDuration),
         (ConfigUpdate { phase2_deadline_secs: Some(3_600), ..Default::default() }, ErrorCode::InvalidDuration),
@@ -307,6 +308,7 @@ fn update_config_enforces_bounds() {
         &mut svm,
         &admin,
         ConfigUpdate {
+            appeal_window_secs: Some(DAY_30),
             appeal_expiry_secs: Some(DAY_30),
             phase2_deadline_secs: Some(DAY_30),
             not_returned_grace_secs: Some(DAY_30),
@@ -318,6 +320,7 @@ fn update_config_enforces_bounds() {
     let c = read::<Config>(&svm, &config_pda());
     assert_eq!(c.not_returned_grace_secs, DAY_30);
     assert_eq!(c.inspection_deadline_secs, DAY_30);
+    assert_eq!(c.appeal_window_secs, DAY_30);
 }
 
 #[test]

@@ -44,8 +44,8 @@ pub const MIN_APPEAL_WINDOW_SECS: i64 = 86_400;
 /// shortened to the point where an honest renter cannot meet it.
 pub const MIN_PHASE2_DEADLINE_SECS: i64 = 86_400;
 
-/// Ceiling for every rental-timing setting (arrival window, not-returned
-/// grace, inspection window, appeal expiry), so a mistyped value can't
+/// Ceiling for every timing setting (arrival window, not-returned grace,
+/// inspection window, appeal window, appeal expiry), so a mistyped value can't
 /// leave a rental waiting on a deadline that effectively never comes.
 pub const MAX_TIMEOUT_SECS: i64 = 30 * 86_400;
 
