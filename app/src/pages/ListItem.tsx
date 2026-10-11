@@ -240,8 +240,8 @@ export function ListItem() {
   const selectedCategoryColor = CATEGORIES.find((c) => c.key === category)?.color ?? C.border
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-      <div className="mb-10">
+    <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
+      <div className="mb-8">
         <span
           className="mb-3 inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide"
           style={{ background: C.accentSoft, color: C.primary }}
@@ -262,236 +262,322 @@ export function ListItem() {
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-[1fr_260px]">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            attemptList()
-          }}
-          className="flex flex-col gap-6"
-        >
-          {needsEmail && publicKey && token && (
-            <section className="rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-              <h2 className="mb-1 text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-                Add your email to list items
-              </h2>
-              <p className="mb-4 text-xs leading-relaxed" style={{ color: C.faint }}>
-                Owners need an email on file so we can send rental notifications: confirmation deadlines, handover reminders, and deposit release updates.
-              </p>
-              <ProfileForm
-                ref={profileFormRef}
-                showNameField={!profile}
-                emailRequired
-                renderFormTag={false}
-                onSubmit={async (name, email) => {
-                  try {
-                    await saveProfile(publicKey.toBase58(), profile ? profile.name : name, email, token)
-                    refetch()
-                  } catch (err) {
-                    // A 401 here means this token is dead server-side (expired
-                    // despite passing the local check, or a session secret
-                    // rotation) — clear it so sign-in is required again instead
-                    // of leaving the person stuck resubmitting the same form
-                    // against the same bad token forever.
-                    if (err instanceof Error && (err as Error & { status?: number }).status === 401) clearSession()
-                    throw err
-                  }
-                }}
-              />
-            </section>
-          )}
-
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          attemptList()
+        }}
+        className="flex flex-col gap-8"
+      >
+        {needsEmail && publicKey && token && (
           <section className="rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-            <h2 className="mb-4 text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-              Photos
+            <h2 className="mb-1 text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+              Add your email to list items
             </h2>
-            <PhotoManifestField value={photos} onChange={setPhotos} />
+            <p className="mb-4 text-xs leading-relaxed" style={{ color: C.faint }}>
+              Owners need an email on file so we can send rental notifications: confirmation deadlines, handover reminders, and deposit release updates.
+            </p>
+            <ProfileForm
+              ref={profileFormRef}
+              showNameField={!profile}
+              emailRequired
+              renderFormTag={false}
+              onSubmit={async (name, email) => {
+                try {
+                  await saveProfile(publicKey.toBase58(), profile ? profile.name : name, email, token)
+                  refetch()
+                } catch (err) {
+                  if (err instanceof Error && (err as Error & { status?: number }).status === 401) clearSession()
+                  throw err
+                }
+              }}
+            />
           </section>
+        )}
 
-          <section className="flex flex-col gap-5 rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-            <h2 className="text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-              The basics
-            </h2>
-            <Field label="Item name">
-              <input
-                type="text"
-                value={itemName}
-                onChange={(e) => setItemName(e.target.value)}
-                placeholder="e.g. Canon EOS Camera"
-                maxLength={50}
-                required
-                style={INPUT_STYLE}
-              />
-            </Field>
+        {/* Visual Anchor: Large Photo Upload & Gallery at the top */}
+        <section className="rounded-2xl p-6 sm:p-7 shadow-sm" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+          <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+            <div>
+              <h2 className="text-xl font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                Item photos
+              </h2>
+              <p className="text-xs" style={{ color: C.faint }}>
+                Photos are the first thing renters see. Upload clear photos showing condition and accessories.
+              </p>
+            </div>
+            <span
+              className="self-start rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+              style={{ background: C.subtleBg, color: C.muted, border: `1px solid ${C.border}` }}
+            >
+              Visual anchor
+            </span>
+          </div>
+          <PhotoManifestField value={photos} onChange={setPhotos} hero />
+        </section>
 
-            <Field label="Description">
-              <textarea
-                rows={5}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe your item, its condition, and what's included"
-                maxLength={1200}
-                required
-                style={{ ...INPUT_STYLE, resize: 'none' }}
-              />
-            </Field>
-          </section>
+        {/* Form Details and Supportive Sidebar below the photos */}
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 items-start">
+          <div className="flex flex-col gap-6 lg:col-span-8">
+            <section className="flex flex-col gap-5 rounded-2xl p-6 shadow-sm" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+              <h2 className="text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                The basics
+              </h2>
+              <Field label="Item name">
+                <input
+                  type="text"
+                  value={itemName}
+                  onChange={(e) => setItemName(e.target.value)}
+                  placeholder="e.g. Canon EOS Camera"
+                  maxLength={50}
+                  required
+                  style={INPUT_STYLE}
+                />
+              </Field>
 
-          <section className="flex flex-col gap-5 rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-            <h2 className="text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-              Category &amp; condition
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Category">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: selectedCategoryColor }} />
+              <Field label="Description">
+                <textarea
+                  rows={5}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Describe your item, its condition, and what's included"
+                  maxLength={1200}
+                  required
+                  style={{ ...INPUT_STYLE, resize: 'none' }}
+                />
+              </Field>
+            </section>
+
+            <section className="flex flex-col gap-5 rounded-2xl p-6 shadow-sm" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+              <h2 className="text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                Category &amp; condition
+              </h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Category">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: selectedCategoryColor }} />
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value as CategoryKey)}
+                      required
+                      className="w-full"
+                      style={{ ...INPUT_STYLE, cursor: 'pointer', appearance: 'none', background: C.surface, borderColor: category ? selectedCategoryColor : C.border }}
+                    >
+                      <option value="">Select a category</option>
+                      {CATEGORIES.map((c) => (
+                        <option key={c.key} value={c.key}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </Field>
+                <Field label="Rarity">
                   <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as CategoryKey)}
-                    required
-                    className="w-full"
-                    style={{ ...INPUT_STYLE, cursor: 'pointer', appearance: 'none', background: C.surface, borderColor: category ? selectedCategoryColor : C.border }}
+                    value={rarityTier}
+                    onChange={(e) => setRarityTier(e.target.value as RarityKey)}
+                    style={{ ...INPUT_STYLE, cursor: 'pointer', appearance: 'none', background: C.surface }}
                   >
-                    <option value="">Select a category</option>
-                    {CATEGORIES.map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.label}
+                    {RARITY_TIERS.map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.label}
                       </option>
                     ))}
                   </select>
-                </div>
-              </Field>
-              <Field label="Rarity">
-                <select
-                  value={rarityTier}
-                  onChange={(e) => setRarityTier(e.target.value as RarityKey)}
-                  style={{ ...INPUT_STYLE, cursor: 'pointer', appearance: 'none', background: C.surface }}
-                >
-                  {RARITY_TIERS.map((r) => (
-                    <option key={r.key} value={r.key}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-          </section>
+                </Field>
+              </div>
+            </section>
 
-          <section className="flex flex-col gap-5 rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-            <h2 className="text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-              Pricing &amp; deposit
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Rental price per week (SOL)">
-                <input
-                  type="number"
-                  value={rentalPrice}
-                  onChange={(e) => setRentalPrice(e.target.value)}
-                  placeholder="0"
-                  min="0"
-                  step="0.01"
-                  required
-                  style={INPUT_STYLE}
-                />
-              </Field>
-              <Field label="Refundable deposit (SOL)">
-                <input
-                  type="number"
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
-                  placeholder="0"
-                  min="0"
-                  step="0.01"
-                  required
-                  style={INPUT_STYLE}
-                />
-              </Field>
-            </div>
+            <section className="flex flex-col gap-5 rounded-2xl p-6 shadow-sm" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+              <h2 className="text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                Pricing &amp; deposit
+              </h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Rental price per week (SOL)">
+                  <input
+                    type="number"
+                    value={rentalPrice}
+                    onChange={(e) => setRentalPrice(e.target.value)}
+                    placeholder="0"
+                    min="0"
+                    step="0.01"
+                    required
+                    style={INPUT_STYLE}
+                  />
+                </Field>
+                <Field label="Refundable deposit (SOL)">
+                  <input
+                    type="number"
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    placeholder="0"
+                    min="0"
+                    step="0.01"
+                    required
+                    style={INPUT_STYLE}
+                  />
+                </Field>
+              </div>
 
-            {needsEstimatedValue && (
-              <Field label="Estimated value (SOL)">
+              {needsEstimatedValue && (
+                <Field label="Estimated value (SOL)">
+                  <input
+                    type="number"
+                    value={estimatedValue}
+                    onChange={(e) => setEstimatedValue(e.target.value)}
+                    placeholder="0"
+                    min="0"
+                    step="0.01"
+                    required
+                    style={INPUT_STYLE}
+                  />
+                  <p className="mt-1.5 text-xs" style={{ color: depositExceedsCap ? C.rust : C.faint }}>
+                    Rare and Antique items cap the deposit at 45% of estimated value
+                    {depositCapLamports !== null && ` (max ${(depositCapLamports / 1e9).toFixed(2)} SOL here)`}.
+                  </p>
+                </Field>
+              )}
+            </section>
+
+            <section className="flex flex-col gap-5 rounded-2xl p-6 shadow-sm" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+              <h2 className="text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                Location
+              </h2>
+              <Field label="General area (city or postcode)">
                 <input
-                  type="number"
-                  value={estimatedValue}
-                  onChange={(e) => setEstimatedValue(e.target.value)}
-                  placeholder="0"
-                  min="0"
-                  step="0.01"
+                  type="text"
+                  value={generalArea}
+                  onChange={(e) => setGeneralArea(e.target.value)}
+                  placeholder="e.g. Shoreditch, London"
+                  maxLength={120}
                   required
                   style={INPUT_STYLE}
                 />
-                <p className="mt-1.5 text-xs" style={{ color: depositExceedsCap ? C.rust : C.faint }}>
-                  Rare and Antique items cap the deposit at 45% of estimated value
-                  {depositCapLamports !== null && ` (max ${(depositCapLamports / 1e9).toFixed(2)} SOL here)`}.
+                <p className="mt-1.5 text-xs" style={{ color: C.faint }}>
+                  Shown to renters considering local pickup, so they can judge distance. Never your exact address.
                 </p>
               </Field>
+            </section>
+
+            {error && (
+              <p className="text-sm" style={{ color: C.rust }}>
+                {error}
+              </p>
             )}
-          </section>
-
-          <section className="flex flex-col gap-5 rounded-2xl p-6" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-            <h2 className="text-lg font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-              Location
-            </h2>
-            <Field label="General area (city or postcode)">
-              <input
-                type="text"
-                value={generalArea}
-                onChange={(e) => setGeneralArea(e.target.value)}
-                placeholder="e.g. Shoreditch, London"
-                maxLength={120}
-                required
-                style={INPUT_STYLE}
-              />
-              <p className="mt-1.5 text-xs" style={{ color: C.faint }}>
-                Shown to renters considering local pickup, so they can judge distance. Never your exact address.
+            {authError && (
+              <p className="text-sm" style={{ color: C.rust }}>
+                {authError}
               </p>
-            </Field>
-          </section>
+            )}
 
-          {error && (
-            <p className="text-sm" style={{ color: C.rust }}>
-              {error}
-            </p>
-          )}
-          {authError && (
-            <p className="text-sm" style={{ color: C.rust }}>
-              {authError}
-            </p>
-          )}
+            <button
+              type="submit"
+              disabled={submitting || signingIn}
+              className="w-full rounded-2xl py-4 text-base font-bold transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
+              style={{ background: C.primary, color: C.onAccent, boxShadow: '0 4px 16px rgba(255,107,53,0.32)' }}
+            >
+              {submitButtonLabel}
+            </button>
+          </div>
 
-          <button
-            type="submit"
-            disabled={submitting || signingIn}
-            className="w-full rounded-2xl py-4 text-base font-bold transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
-            style={{ background: C.primary, color: C.onAccent, boxShadow: '0 4px 16px rgba(255,107,53,0.32)' }}
-          >
-            {submitButtonLabel}
-          </button>
-        </form>
-
-        <div className="flex h-fit flex-col gap-4">
-          {[
-            { icon: '💷', color: C.primary, title: 'You choose the price.', body: 'Set whatever weekly rate works for you. You can adjust it any time.' },
-            { icon: '🔒', color: C.trust, title: 'You choose the deposit.', body: 'Decide on a deposit amount that gives you peace of mind.' },
-            { icon: '📸', color: C.green, title: 'Photos protect everyone.', body: 'A few photos at handover keep the rental clear and fair for both sides.' },
-          ].map((tip) => (
-            <div key={tip.title} className="rounded-2xl p-4" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-              <div
-                className="mb-2.5 flex h-9 w-9 items-center justify-center rounded-full text-base"
-                style={{ background: `${tip.color}1A` }}
-              >
-                {tip.icon}
-              </div>
-              <p className="mb-1 text-sm font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
-                {tip.title}
-              </p>
-              <p className="text-xs leading-relaxed" style={{ color: C.faint }}>
-                {tip.body}
-              </p>
+          {/* Right column: Progress checklist & marketplace tips */}
+          <div className="flex flex-col gap-4 lg:col-span-4 lg:sticky lg:top-6">
+            <div className="rounded-2xl p-5 shadow-sm" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+              <h3 className="mb-3 text-sm font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                Listing checklist
+              </h3>
+              <ul className="flex flex-col gap-2.5 text-xs">
+                <li className="flex items-center gap-2">
+                  <span
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                    style={{
+                      background: photos ? 'var(--gs-badge-positive-bg)' : C.subtleBg,
+                      color: photos ? C.green : C.faint,
+                      border: `1px solid ${photos ? 'var(--gs-badge-positive-border)' : C.border}`,
+                    }}
+                  >
+                    {photos ? '✓' : '·'}
+                  </span>
+                  <span style={{ color: photos ? C.cream : C.muted }}>Photos uploaded</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                    style={{
+                      background: itemName && description ? 'var(--gs-badge-positive-bg)' : C.subtleBg,
+                      color: itemName && description ? C.green : C.faint,
+                      border: `1px solid ${itemName && description ? 'var(--gs-badge-positive-border)' : C.border}`,
+                    }}
+                  >
+                    {itemName && description ? '✓' : '·'}
+                  </span>
+                  <span style={{ color: itemName && description ? C.cream : C.muted }}>Title &amp; description</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                    style={{
+                      background: category ? 'var(--gs-badge-positive-bg)' : C.subtleBg,
+                      color: category ? C.green : C.faint,
+                      border: `1px solid ${category ? 'var(--gs-badge-positive-border)' : C.border}`,
+                    }}
+                  >
+                    {category ? '✓' : '·'}
+                  </span>
+                  <span style={{ color: category ? C.cream : C.muted }}>Category selected</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                    style={{
+                      background: rentalPrice && depositAmount ? 'var(--gs-badge-positive-bg)' : C.subtleBg,
+                      color: rentalPrice && depositAmount ? C.green : C.faint,
+                      border: `1px solid ${rentalPrice && depositAmount ? 'var(--gs-badge-positive-border)' : C.border}`,
+                    }}
+                  >
+                    {rentalPrice && depositAmount ? '✓' : '·'}
+                  </span>
+                  <span style={{ color: rentalPrice && depositAmount ? C.cream : C.muted }}>Price &amp; deposit set</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                    style={{
+                      background: generalArea.trim() ? 'var(--gs-badge-positive-bg)' : C.subtleBg,
+                      color: generalArea.trim() ? C.green : C.faint,
+                      border: `1px solid ${generalArea.trim() ? 'var(--gs-badge-positive-border)' : C.border}`,
+                    }}
+                  >
+                    {generalArea.trim() ? '✓' : '·'}
+                  </span>
+                  <span style={{ color: generalArea.trim() ? C.cream : C.muted }}>General area added</span>
+                </li>
+              </ul>
             </div>
-          ))}
+
+            {[
+              { icon: '💷', color: C.primary, title: 'You choose the price.', body: 'Set whatever weekly rate works for you. You can adjust it any time.' },
+              { icon: '🔒', color: C.trust, title: 'You choose the deposit.', body: 'Decide on a deposit amount that gives you peace of mind.' },
+              { icon: '📸', color: C.green, title: 'Photos protect everyone.', body: 'A few photos at handover keep the rental clear and fair for both sides.' },
+            ].map((tip) => (
+              <div key={tip.title} className="rounded-2xl p-4 shadow-sm" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+                <div
+                  className="mb-2.5 flex h-9 w-9 items-center justify-center rounded-full text-base"
+                  style={{ background: `${tip.color}1A` }}
+                >
+                  {tip.icon}
+                </div>
+                <p className="mb-1 text-sm font-bold" style={{ fontFamily: FONT_HEAD, color: C.cream }}>
+                  {tip.title}
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: C.faint }}>
+                  {tip.body}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </form>
     </div>
   )
 }
