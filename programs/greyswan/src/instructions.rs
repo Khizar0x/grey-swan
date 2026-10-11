@@ -12,6 +12,7 @@ pub mod dispute;
 pub mod migrate_config;
 pub mod update_config;
 pub mod pool;
+pub mod verdict;
 
 pub use initialize::*;
 pub use increment::*;
@@ -27,3 +28,4 @@ pub use dispute::*;
 pub use migrate_config::*;
 pub use update_config::*;
 pub use pool::*;
+pub use verdict::*;

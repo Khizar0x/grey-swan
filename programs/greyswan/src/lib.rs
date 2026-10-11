@@ -157,6 +157,15 @@ pub mod greyswan {
         crate::instructions::dispute::handle_admin_open_dispute(ctx, reason)
     }
 
+    pub fn post_verdict(
+        ctx: Context<PostVerdict>,
+        tiers: Vec<u8>,
+        prompt_hash: [u8; 32],
+        output_hash: [u8; 32],
+    ) -> Result<()> {
+        crate::instructions::verdict::handle_post_verdict(ctx, tiers, prompt_hash, output_hash)
+    }
+
     pub fn resolve_dispute(
         ctx: Context<ResolveDispute>,
         owner_amount: u64,
