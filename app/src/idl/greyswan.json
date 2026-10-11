@@ -228,6 +228,24 @@
           }
         },
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "owner",
           "signer": true
         }
@@ -318,24 +336,6 @@
           }
         },
         {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
           "name": "dispute",
           "writable": true,
           "pda": {
@@ -389,6 +389,30 @@
           "writable": true
         },
         {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "dispute",
           "writable": true,
           "pda": {
@@ -428,6 +452,83 @@
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "flag_return_not_received",
+      "discriminator": [
+        201,
+        106,
+        151,
+        77,
+        235,
+        205,
+        121,
+        133
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "increment",
@@ -1045,6 +1146,24 @@
           }
         },
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "renter",
           "signer": true
         }
@@ -1569,6 +1688,11 @@
       "code": 6045,
       "name": "InspectionWindowStillOpen",
       "msg": "The owner still has time to check the returned item"
+    },
+    {
+      "code": 6046,
+      "name": "InspectionWindowClosed",
+      "msg": "The window to check the returned item has closed"
     }
   ],
   "types": [
@@ -1907,6 +2031,9 @@
           },
           {
             "name": "AdminOpened"
+          },
+          {
+            "name": "ReturnNotReceived"
           }
         ]
       }
@@ -2185,11 +2312,15 @@
             "type": "i64"
           },
           {
+            "name": "not_returned_after",
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                24
+                16
               ]
             }
           }

@@ -234,6 +234,24 @@ export type Greyswan = {
           }
         },
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "owner",
           "signer": true
         }
@@ -324,24 +342,6 @@ export type Greyswan = {
           }
         },
         {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
           "name": "dispute",
           "writable": true,
           "pda": {
@@ -395,6 +395,30 @@ export type Greyswan = {
           "writable": true
         },
         {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
           "name": "dispute",
           "writable": true,
           "pda": {
@@ -434,6 +458,83 @@ export type Greyswan = {
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "flagReturnNotReceived",
+      "discriminator": [
+        201,
+        106,
+        151,
+        77,
+        235,
+        205,
+        121,
+        133
+      ],
+      "accounts": [
+        {
+          "name": "rental",
+          "writable": true
+        },
+        {
+          "name": "timeline",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  109,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rental"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "increment",
@@ -1051,6 +1152,24 @@ export type Greyswan = {
           }
         },
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "renter",
           "signer": true
         }
@@ -1575,6 +1694,11 @@ export type Greyswan = {
       "code": 6045,
       "name": "inspectionWindowStillOpen",
       "msg": "The owner still has time to check the returned item"
+    },
+    {
+      "code": 6046,
+      "name": "inspectionWindowClosed",
+      "msg": "The window to check the returned item has closed"
     }
   ],
   "types": [
@@ -1913,6 +2037,9 @@ export type Greyswan = {
           },
           {
             "name": "adminOpened"
+          },
+          {
+            "name": "returnNotReceived"
           }
         ]
       }
@@ -2191,11 +2318,15 @@ export type Greyswan = {
             "type": "i64"
           },
           {
+            "name": "notReturnedAfter",
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                24
+                16
               ]
             }
           }
