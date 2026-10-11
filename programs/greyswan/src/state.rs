@@ -207,6 +207,7 @@ pub enum DisputeKind {
     ReturnIssue,
     ArrivalIssue,
     NotReturned,
+    AdminOpened,
 }
 
 #[account]

@@ -141,6 +141,10 @@ pub mod greyswan {
         crate::instructions::dispute::handle_flag_not_returned(ctx)
     }
 
+    pub fn admin_open_dispute(ctx: Context<AdminOpenDispute>, reason: String) -> Result<()> {
+        crate::instructions::dispute::handle_admin_open_dispute(ctx, reason)
+    }
+
     pub fn resolve_dispute(
         ctx: Context<ResolveDispute>,
         owner_amount: u64,

@@ -456,3 +456,157 @@ fn phase3_as(svm: &mut LiteSVM, rental: Pubkey, renter: Pubkey) {
     )
     .unwrap();
 }
+
+// ---------- admin_open_dispute ----------
+
+fn admin_open_ix(rental: Pubkey, admin: Pubkey, reason: &str) -> Instruction {
+    ix(
+        greyswan::instruction::AdminOpenDispute { reason: reason.to_string() },
+        greyswan::accounts::AdminOpenDispute {
+            config: config_pda(),
+            rental,
+            dispute: dispute_pda(&rental),
+            admin,
+            system_program: system_program::ID,
+        },
+    )
+}
+
+fn admin_open(svm: &mut LiteSVM, rental: Pubkey, signer: &Keypair, reason: &str) -> Result<(), String> {
+    send(svm, admin_open_ix(rental, signer.pubkey(), reason), signer, &[signer])
+}
+
+#[test]
+fn admin_can_open_a_dispute_at_every_active_phase() {
+    let mut svm = setup();
+    let admin = init_test_config(&mut svm);
+    let (owner, renter) = (funded(&mut svm), funded(&mut svm));
+    let dispute_rent = Rent::default().minimum_balance(8 + Dispute::INIT_SPACE);
+
+    // Steps to bring a fresh rental to each phase before the admin steps in.
+    let steps: [&dyn Fn(&mut LiteSVM, Pubkey); 5] = [
+        &|_, _| {},
+        &|svm, r| phase1(svm, r, &owner).unwrap(),
+        &|svm, r| {
+            phase1(svm, r, &owner).unwrap();
+            phase2(svm, r, &renter).unwrap();
+        },
+        &|svm, r| {
+            phase1(svm, r, &owner).unwrap();
+            phase2(svm, r, &renter).unwrap();
+            phase3(svm, r, &renter).unwrap();
+        },
+        &|svm, r| all_phases(svm, r, &owner, &renter),
+    ];
+    for (i, step) in steps.iter().enumerate() {
+        let listing = list_item(&mut svm, &owner, &format!("Item {i}"));
+        let rental = rent(&mut svm, listing, &renter);
+        step(&mut svm, rental);
+
+        let admin_before = lamports(&svm, &admin.pubkey());
+        admin_open(&mut svm, rental, &admin, "Owner reports no contact for three weeks").unwrap();
+
+        let s = state(&svm, &rental);
+        assert_eq!(s.status, RentalStatus::Disputed, "phase step {i}");
+        assert_eq!(s.dispute_kind, DisputeKind::AdminOpened);
+        assert_eq!(s.dispute_reason, "Owner reports no contact for three weeks");
+        let dispute = read::<Dispute>(&svm, &dispute_pda(&rental));
+        assert_eq!(dispute.kind, DisputeKind::AdminOpened);
+        assert_eq!(dispute.status, DisputeStatus::Open);
+        assert_eq!(lamports(&svm, &admin.pubkey()), admin_before - dispute_rent - 5000);
+    }
+}
+
+#[test]
+fn admin_open_dispute_rejected_for_anyone_but_the_admin() {
+    let Rented { mut svm, owner, renter, rental, .. } = arrived();
+    let stranger = funded(&mut svm);
+    for signer in [&owner, &renter, &stranger] {
+        assert_program_err(admin_open(&mut svm, rental, signer, "Stuck"), ErrorCode::NotAdmin);
+    }
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Active);
+    assert!(svm.get_account(&dispute_pda(&rental)).is_none());
+}
+
+#[test]
+fn admin_open_dispute_requires_a_reason_within_the_limit() {
+    let Rented { mut svm, admin, rental, .. } = arrived();
+    assert_program_err(admin_open(&mut svm, rental, &admin, ""), ErrorCode::DisputeReasonRequired);
+    assert_program_err(admin_open(&mut svm, rental, &admin, &"x".repeat(301)), ErrorCode::DisputeReasonTooLong);
+    admin_open(&mut svm, rental, &admin, &"x".repeat(300)).unwrap();
+}
+
+#[test]
+fn admin_open_dispute_rejected_once_the_rental_is_over() {
+    let Rented { mut svm, admin, owner, renter, listing, rental } = sent_back();
+    phase4(&mut svm, rental, &owner).unwrap();
+    send(&mut svm, confirm_return_ix(listing, rental, owner.pubkey(), renter.pubkey()), &owner, &[&owner]).unwrap();
+    assert_program_err(admin_open(&mut svm, rental, &admin, "Too late"), ErrorCode::InvalidRentalStatus);
+}
+
+#[test]
+fn admin_open_dispute_rejected_on_real_legacy_disputed_rental() {
+    // Already Disputed under the old program, with no Dispute PDA, so it's
+    // the status check (not the PDA already existing) that stops it.
+    let mut svm = devnet_svm();
+    let admin = migrated_devnet_config(&mut svm);
+    let rental = load_fixture(&mut svm, include_str!("fixtures/devnet_legacy_disputed_rental.json"));
+    let err = send_as(&mut svm, admin_open_ix(rental, admin, "Already open"), admin);
+    assert_program_err(err, ErrorCode::InvalidRentalStatus);
+}
+
+/// Loads the real devnet Config and migrates it, as the upgrade will.
+/// Returns the real devnet admin (signed for with sigverify off).
+fn migrated_devnet_config(svm: &mut LiteSVM) -> Pubkey {
+    use std::str::FromStr;
+    set_time(svm, START_TIME + 60 * DAY);
+    load_fixture(svm, include_str!("fixtures/devnet_config.json"));
+    let admin = Pubkey::from_str("76D6XPGqbxcrCddeLtfPLwG1ZfNMkveCpAtDSH3pzTb4").unwrap();
+    svm.airdrop(&admin, 1_000_000_000).unwrap();
+    send_as(
+        svm,
+        ix(
+            greyswan::instruction::MigrateConfig {},
+            greyswan::accounts::MigrateConfig { config: config_pda(), admin, system_program: system_program::ID },
+        ),
+        admin,
+    )
+    .unwrap();
+    admin
+}
+
+#[test]
+fn admin_opens_and_resolves_real_legacy_devnet_rental() {
+    // The real devnet rental shipped under the old program: no timeline, so
+    // neither timeout applies to it and this is its only exit.
+    let mut svm = devnet_svm();
+    let admin = migrated_devnet_config(&mut svm);
+    let rental = load_fixture(&mut svm, include_str!("fixtures/devnet_legacy_shipped_rental.json"));
+    let s = state(&svm, &rental);
+    assert_eq!(s.status, RentalStatus::Active);
+    assert!(svm.get_account(&timeline_pda(&rental)).is_none());
+    stand_in_listing(&mut svm, &s);
+
+    send_as(&mut svm, admin_open_ix(rental, admin, "Shipped before deadlines existed; no arrival recorded"), admin)
+        .unwrap();
+    let opened = state(&svm, &rental);
+    assert_eq!(opened.status, RentalStatus::Disputed);
+    assert_eq!(opened.dispute_kind, DisputeKind::AdminOpened);
+    assert_eq!(read::<Dispute>(&svm, &dispute_pda(&rental)).kind, DisputeKind::AdminOpened);
+
+    // Owner and renter are the same wallet in this fixture, so it receives
+    // both shares.
+    let held = s.total_rental_cost + s.deposit_amount;
+    let rental_before = lamports(&svm, &rental);
+    let wallet_before = lamports(&svm, &s.renter);
+    send_as(
+        &mut svm,
+        resolve_dispute_ix(s.listing, rental, admin, s.owner, s.renter, held / 2, held - held / 2),
+        admin,
+    )
+    .unwrap();
+    assert_eq!(state(&svm, &rental).status, RentalStatus::Resolved);
+    assert_eq!(lamports(&svm, &s.renter), wallet_before + held);
+    assert_eq!(lamports(&svm, &rental), rental_before - held);
+    assert!(read::<Listing>(&svm, &s.listing).is_available);
+}

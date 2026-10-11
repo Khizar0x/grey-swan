@@ -205,6 +205,62 @@ pub fn handle_flag_not_returned(ctx: Context<FlagNotReturned>) -> Result<()> {
     Ok(())
 }
 
+// ---------- Admin opens a dispute on a stuck rental ----------
+
+// The exit for anything the timeouts don't cover, including rentals shipped
+// before timelines existed (which have no recorded dates at all). Takes no
+// timeline, so it works on any Active rental at any phase.
+
+#[derive(Accounts)]
+pub struct AdminOpenDispute<'info> {
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        has_one = admin @ crate::error::ErrorCode::NotAdmin,
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(mut)]
+    pub rental: Account<'info, Rental>,
+
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + Dispute::INIT_SPACE,
+        seeds = [DISPUTE_SEED, rental.key().as_ref()],
+        bump
+    )]
+    pub dispute: Account<'info, Dispute>,
+
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handle_admin_open_dispute(ctx: Context<AdminOpenDispute>, reason: String) -> Result<()> {
+    require!(
+        ctx.accounts.rental.status == RentalStatus::Active,
+        crate::error::ErrorCode::InvalidRentalStatus,
+    );
+    require!(!reason.is_empty(), crate::error::ErrorCode::DisputeReasonRequired);
+    require!(
+        reason.len() <= MAX_DISPUTE_REASON_LEN,
+        crate::error::ErrorCode::DisputeReasonTooLong
+    );
+
+    let now = Clock::get()?.unix_timestamp;
+    let rental = &mut ctx.accounts.rental;
+    rental.status = RentalStatus::Disputed;
+    rental.dispute_kind = DisputeKind::AdminOpened;
+    rental.dispute_reason = reason;
+    rental.disputed_at = now;
+
+    open_dispute(&mut ctx.accounts.dispute, rental.key(), DisputeKind::AdminOpened, now, ctx.bumps.dispute);
+
+    Ok(())
+}
+
 // ---------- Admin resolves the dispute ----------
 
 #[derive(Accounts)]
