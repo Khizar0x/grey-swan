@@ -2464,6 +2464,21 @@ export type Greyswan = {
       "code": 6062,
       "name": "sameOwnerAndRenter",
       "msg": "The owner and renter are the same wallet"
+    },
+    {
+      "code": 6063,
+      "name": "appealCannotWin",
+      "msg": "This verdict already gives you everything an appeal could"
+    },
+    {
+      "code": 6064,
+      "name": "invalidVerdictKey",
+      "msg": "The verdict key must not be the admin or a reviewer"
+    },
+    {
+      "code": 6065,
+      "name": "configValueTooHigh",
+      "msg": "This value is above its allowed maximum"
     }
   ],
   "types": [
