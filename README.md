@@ -8,7 +8,8 @@ Live program on devnet: `2YnarssLwdKPi3Br6C6cUcAuKyyoDagXaHZWo3kykcko`
 
 ## Demo
 
-Demo video: (link coming)
+- Demo video (2:42): https://youtu.be/Y4Sv_4pzPu0
+- Pitch video (1:56): https://youtu.be/xuxDr4o1ano
 
 ---
 
